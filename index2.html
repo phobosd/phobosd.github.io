@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Odyssey 3D</title>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Tone.js Library -->
+    <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #fff;
+            font-family: 'Consolas', monospace;
+            user-select: none;
+            overflow: hidden; /* Hide scrollbars */
+        }
+        canvas {
+            display: block;
+            touch-action: none;
+            border: 3px solid #0f0;
+            box-shadow: 0 0 25px rgba(0, 255, 0, 0.7);
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            width: 800px; /* Match canvas width */
+            padding: 10px;
+            font-size: 1.5em;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none; /* Ignore mouse events */
+        }
+        #controls {
+            padding: 15px;
+            margin-top: 10px;
+            text-align: center;
+            font-size: 1.1em;
+            color: #ccc;
+        }
+        #controls kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            margin: 0 2px;
+            border: 1px solid #555;
+            background-color: #222;
+            border-radius: 4px;
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+        .message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            border: 3px solid #0f0;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.9);
+            z-index: 1000;
+        }
+        .message-box h2 {
+            color: #0f0;
+            margin-top: 0;
+            font-size: 2.5em;
+            text-shadow: 0 0 10px #0f0;
+        }
+        .message-box button {
+            background: #0f0;
+            color: #000;
+            border: none;
+            padding: 12px 25px;
+            margin-top: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-radius: 5px;
+            transition: background 0.3s, transform 0.2s, box-shadow 0.3s;
+            font-size: 1.1em;
+            box-shadow: 0 4px 10px rgba(0, 255, 0, 0.4);
+        }
+        .message-box button:hover {
+            background: #00cc00;
+            transform: scale(1.05);
+            box-shadow: 0 6px 15px rgba(0, 255, 0, 0.6);
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <div id="score">Score: 0</div>
+        <div id="lives">Lives: 3</div>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div id="controls">
+        <p>Move: **Mouse** (X/Y) | Shoot: <kbd>SPACE</kbd> or **Click**</p>
+        <p>Pause: <kbd>P</kbd></p>
+        <p id="audio-note" style="color:#ffcc00; font-size: 0.9em;">Click or Press a Key to Enable Sound!</p>
+    </div>
+
+    <div id="message-container"></div>
+
+    <script>
+        // --- Three.js Globals ---
+        let scene, camera, renderer;
+        let player, playerMaterial;
+        let starField;
+
+        // --- Game State Variables ---
+        let gameRunning = true;
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let gameOverFlag = false;
+        
+        const MAX_Z = -500; // Far end of the playable space (Z-axis)
+        const MIN_Z = 10;   // Near end of the playable space (Z-axis)
+
+        // --- Game Arrays (using Three.js Meshes) ---
+        const bullets = [];
+        const asteroids = [];
+        let particles = [];
+        let keys = {};
+
+        // --- Mouse/Input State ---
+        let mouseX = 0;
+        let mouseY = 0;
+        let canvasBounds = { left: 0, top: 0, width: 800, height: 600 };
+        const SHIP_MOVEMENT_RADIUS = 30; // Max distance the ship can move from center (in world units)
+
+        // --- Tone.js Sound Setup ---
+        const fireSynth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "triangle" },
+            envelope: { attack: 0.001, decay: 0.1, sustain: 0.0, release: 0.1 }
+        }).toDestination();
+
+        const explosionNoise = new Tone.NoiseSynth({
+            noise: { type: "white" },
+            envelope: { attack: 0.01, decay: 0.5, sustain: 0, release: 0.2 }
+        }).toDestination();
+
+        const deathSound = new Tone.MembraneSynth({
+            pitchDecay: 0.05,
+            octaves: 8,
+            envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.5 },
+            volume: -5
+        }).toDestination();
+
+        let audioContextReady = false;
+
+        function startAudioContext() {
+            if (Tone.context.state !== 'running') {
+                Tone.start().then(() => {
+                    audioContextReady = true;
+                    document.getElementById('audio-note').style.display = 'none';
+                });
+            } else {
+                audioContextReady = true;
+                document.getElementById('audio-note').style.display = 'none';
+            }
+        }
+        
+        // --- Timing Variables ---
+        let lastShootTime = 0;
+        const shootDelay = 150; // ms between player shots
+        let lastTimestamp = 0;
+
+        // --- Three.js Initialization ---
+        function initThreeJS() {
+            const canvas = document.getElementById('gameCanvas');
+            const width = 800;
+            const height = 600;
+
+            // 1. Scene Setup
+            scene = new THREE.Scene();
+
+            // 2. Camera Setup (FOV, Aspect, Near, Far)
+            camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+            camera.position.set(0, 0, 50); // Camera is placed behind the player ship, looking towards Z=0
+
+            // 3. Renderer Setup
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(width, height);
+            renderer.setClearColor(0x000000, 1);
+            
+            // Get initial canvas bounds for mouse conversion
+            updateCanvasBounds();
+
+            // 4. Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(1, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            // 5. Create Game Objects
+            createPlayerShip();
+            createStarField();
+        }
+
+        function createPlayerShip() {
+            // Player Ship: Simple Pyramid/Cone shape
+            const geometry = new THREE.ConeGeometry(2.5, 5, 4);
+            playerMaterial = new THREE.MeshPhongMaterial({ color: 0x00ffff, shininess: 100 });
+            player = new THREE.Mesh(geometry, playerMaterial);
+            
+            player.position.set(0, 0, 10); // Start near the camera (Z=10)
+            player.rotation.x = -Math.PI / 2; // Point cone tip forward (down the Z axis)
+            player.castShadow = true;
+            
+            // Attach Bounding Sphere for Collision
+            player.geometry.computeBoundingSphere();
+            player.userData.radius = player.geometry.boundingSphere.radius * 2; // Custom radius for padding
+            
+            scene.add(player);
+        }
+        
+        function createStarField() {
+            const starCount = 1000;
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            const colors = [];
+
+            // Simple point material
+            const material = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.5,
+                vertexColors: true,
+                sizeAttenuation: true
+            });
+
+            for (let i = 0; i < starCount; i++) {
+                // Spread stars wide and deep in front of the camera
+                const x = THREE.MathUtils.randFloatSpread(400); // -200 to 200
+                const y = THREE.MathUtils.randFloatSpread(300); // -150 to 150
+                const z = THREE.MathUtils.randFloat(MAX_Z, 0);  // Far to near (but mostly far)
+
+                positions.push(x, y, z);
+                
+                // Add color (brightness) for effect
+                const brightness = Math.random() * 0.7 + 0.3;
+                colors.push(brightness, brightness, brightness);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            starField = new THREE.Points(geometry, material);
+            scene.add(starField);
+        }
+
+        // --- Game Entity Factories ---
+        
+        function createAsteroid() {
+            // Use Icosahedron geometry for a simple, rocky shape
+            const radius = THREE.MathUtils.randFloat(2, 5);
+            const detail = 0; // Low detail
+            const geometry = new THREE.IcosahedronGeometry(radius, detail);
+            
+            // Randomly displace vertices for a more natural asteroid look
+            for (let i = 0; i < geometry.attributes.position.array.length; i += 3) {
+                geometry.attributes.position.array[i] += (Math.random() - 0.5) * radius * 0.2;
+                geometry.attributes.position.array[i+1] += (Math.random() - 0.5) * radius * 0.2;
+                geometry.attributes.position.array[i+2] += (Math.random() - 0.5) * radius * 0.2;
+            }
+            geometry.computeBoundingSphere(); // Update bounding sphere after displacement
+
+            const material = new THREE.MeshPhongMaterial({ color: 0x808080, flatShading: true });
+            const asteroid = new THREE.Mesh(geometry, material);
+
+            asteroid.position.x = THREE.MathUtils.randFloatSpread(SHIP_MOVEMENT_RADIUS * 2); // Spread across the playing field
+            asteroid.position.y = THREE.MathUtils.randFloatSpread(SHIP_MOVEMENT_RADIUS * 2);
+            asteroid.position.z = MAX_Z; // Start far away
+
+            asteroid.rotation.x = Math.random() * Math.PI * 2;
+            asteroid.rotation.y = Math.random() * Math.PI * 2;
+            asteroid.rotation.z = Math.random() * Math.PI * 2;
+            asteroid.userData.rotationSpeed = new THREE.Vector3(
+                Math.random() * 0.02 - 0.01, 
+                Math.random() * 0.02 - 0.01, 
+                Math.random() * 0.02 - 0.01
+            );
+            
+            asteroid.userData.speed = THREE.MathUtils.randFloat(2.5, 4.5) * (level * 0.2 + 1); // Z speed
+            asteroid.userData.radius = asteroid.geometry.boundingSphere.radius;
+            
+            asteroids.push(asteroid);
+            scene.add(asteroid);
+        }
+        
+        function createBullet() {
+            const geometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const bullet = new THREE.Mesh(geometry, material);
+            
+            // Start bullet slightly ahead of the ship
+            bullet.position.copy(player.position);
+            bullet.position.z -= 1; 
+
+            bullet.userData.speed = -10; // Moves along the negative Z axis (forward)
+            bullet.userData.radius = 0.5;
+            
+            bullets.push(bullet);
+            scene.add(bullet);
+            
+            // --- Sound: Firing ---
+            if (audioContextReady) {
+                fireSynth.triggerAttackRelease("C5", "16n");
+            }
+        }
+        
+        // --- Update and Render Functions ---
+
+        function updateStarField(deltaTime) {
+            const positions = starField.geometry.attributes.position.array;
+            const speedFactor = 0.05 * (level * 0.2 + 1); // Increased for fast motion
+            
+            for (let i = 2; i < positions.length; i += 3) {
+                // Move stars towards the camera (positive Z)
+                positions[i] += speedFactor * deltaTime;
+
+                // Reset star if it passes the camera (Z > MIN_Z)
+                if (positions[i] > MIN_Z) {
+                    positions[i] = MAX_Z;
+                    positions[i-2] = THREE.MathUtils.randFloatSpread(400);
+                    positions[i-1] = THREE.MathUtils.randFloatSpread(300);
+                }
+            }
+            starField.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function updatePlayerMovement(deltaTime) {
+            // Convert normalized mouse position (-1 to 1) to world coordinates
+            const targetX = mouseX * SHIP_MOVEMENT_RADIUS * 0.8;
+            const targetY = mouseY * SHIP_MOVEMENT_RADIUS * 0.8;
+            
+            // Smoothly interpolate player position towards mouse target
+            const smoothFactor = 0.1 * (deltaTime / 16.67); // Adjust smoothness based on frame time
+            player.position.x += (targetX - player.position.x) * smoothFactor;
+            player.position.y += (targetY - player.position.y) * smoothFactor;
+            
+            // Add a slight rotation based on X movement for banking effect
+            player.rotation.z = -(targetX - player.position.x) * 0.05;
+        }
+
+        function updateAsteroids(deltaTime) {
+            const config = getLevelConfig(level);
+
+            // Asteroid Spawning
+            if (asteroids.length < config.maxAsteroids * 2 && Math.random() < config.asteroidSpawnChance / 5) {
+                createAsteroid();
+            }
+
+            // Asteroid Movement
+            for (let i = asteroids.length - 1; i >= 0; i--) {
+                const asteroid = asteroids[i];
+                asteroid.position.z += asteroid.userData.speed * (deltaTime / 16.67);
+                
+                // Rotation
+                asteroid.rotation.x += asteroid.userData.rotationSpeed.x;
+                asteroid.rotation.y += asteroid.userData.rotationSpeed.y;
+                asteroid.rotation.z += asteroid.userData.rotationSpeed.z;
+
+                // Check if asteroid passed the player (positive Z)
+                if (asteroid.position.z > MIN_Z) {
+                    scene.remove(asteroid);
+                    asteroids.splice(i, 1);
+                    score -= 50; // Penalty for missing
+                    updateHUD();
+                }
+            }
+        }
+        
+        function updateBullets(deltaTime) {
+             for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.position.z += bullet.userData.speed * (deltaTime / 16.67);
+
+                // Remove far away bullets
+                if (bullet.position.z < MAX_Z) {
+                    scene.remove(bullet);
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+        
+        function checkCollisions() {
+            // Player Ship vs Asteroids
+            for (let i = asteroids.length - 1; i >= 0; i--) {
+                const asteroid = asteroids[i];
+                
+                // Simple Sphere vs Sphere check (using position and custom radius)
+                const distance = player.position.distanceTo(asteroid.position);
+                if (distance < player.userData.radius + asteroid.userData.radius) {
+                    // Collision detected!
+                    
+                    // --- Player Hit Effects and Logic ---
+                    createExplosion(player.position, 10, 0xff0000); 
+                    lives--;
+                    updateHUD();
+
+                    // --- Asteroid Destruction ---
+                    createExplosion(asteroid.position, 5, 0x808080);
+                    scene.remove(asteroid);
+                    asteroids.splice(i, 1);
+                    
+                    if (lives <= 0 && !gameOverFlag) {
+                        gameOver();
+                        return; // Exit loop immediately
+                    }
+                }
+            }
+
+            // Player Bullets vs Asteroids
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                for (let j = asteroids.length - 1; j >= 0; j--) {
+                    const asteroid = asteroids[j];
+                    
+                    const distance = bullet.position.distanceTo(asteroid.position);
+                    if (distance < bullet.userData.radius + asteroid.userData.radius) {
+                        // Hit!
+                        
+                        // --- Asteroid Destruction ---
+                        createExplosion(asteroid.position, 5, 0x808080);
+                        scene.remove(asteroid);
+                        asteroids.splice(j, 1);
+                        score += 100;
+                        updateHUD();
+                        
+                        // --- Bullet Destruction ---
+                        scene.remove(bullet);
+                        bullets.splice(i, 1);
+                        break; // Move to the next bullet
+                    }
+                }
+            }
+        }
+
+        // --- Explosion/Particle System (Simple implementation for three.js) ---
+        function createExplosion(position, count, colorHex) {
+            // --- Sound: Explosion ---
+            if (audioContextReady) {
+                explosionNoise.triggerAttackRelease(0.2);
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+
+            for (let i = 0; i < count; i++) {
+                // Initial position is the explosion center
+                vertices.push(position.x, position.y, position.z);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            
+            const material = new THREE.PointsMaterial({
+                color: colorHex,
+                size: 1,
+                blending: THREE.AdditiveBlending,
+                transparent: true,
+                depthTest: false
+            });
+            
+            const particleSystem = new THREE.Points(geometry, material);
+            particleSystem.userData.life = 60; // 60 frames life
+            particleSystem.userData.velocity = [];
+
+            // Assign random velocities
+            for (let i = 0; i < count; i++) {
+                particleSystem.userData.velocity.push(
+                    (Math.random() - 0.5) * 0.5, // X speed
+                    (Math.random() - 0.5) * 0.5, // Y speed
+                    (Math.random() - 0.5) * 0.5 // Z speed
+                );
+            }
+            
+            particles.push(particleSystem);
+            scene.add(particleSystem);
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particleSystem = particles[i];
+                particleSystem.userData.life--;
+                
+                if (particleSystem.userData.life <= 0) {
+                    scene.remove(particleSystem);
+                    particles.splice(i, 1);
+                    continue;
+                }
+                
+                // Update particle positions
+                const positions = particleSystem.geometry.attributes.position.array;
+                const velocities = particleSystem.userData.velocity;
+                
+                for (let j = 0; j < positions.length; j += 3) {
+                    positions[j] += velocities[j];
+                    positions[j + 1] += velocities[j + 1];
+                    positions[j + 2] += velocities[j + 2];
+                }
+                
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+                
+                // Fade effect
+                particleSystem.material.opacity = particleSystem.userData.life / 60;
+            }
+        }
+
+        // --- Main Loop ---
+        function animate(timestamp) {
+            if (gameOverFlag) return;
+            
+            const deltaTime = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+            
+            requestAnimationFrame(animate);
+
+            if (!gameRunning) {
+                 renderer.render(scene, camera);
+                 return;
+            }
+
+            // Cap delta time to prevent physics anomalies
+            const cappedDeltaTime = Math.min(deltaTime, 100); 
+
+            updateGame(cappedDeltaTime);
+            
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+
+        function updateGame(deltaTime) {
+            updateStarField(deltaTime);
+            updatePlayerMovement(deltaTime);
+            updateAsteroids(deltaTime);
+            updateBullets(deltaTime);
+            updateParticles();
+            checkCollisions();
+            
+            // Increase level based on score (soft level system)
+            if (score >= level * 1000) {
+                level++;
+                spawnMessage(`LEVEL ${level} REACHED!`, 'gold', 2000);
+            }
+        }
+
+        // --- Game State Functions ---
+        
+        function initGame() {
+            // Clear all entities from scene and arrays
+            asteroids.forEach(a => scene.remove(a));
+            bullets.forEach(b => scene.remove(b));
+            particles.forEach(p => scene.remove(p));
+            asteroids.length = 0;
+            bullets.length = 0;
+            particles.length = 0;
+
+            score = 0;
+            lives = 3;
+            level = 1;
+            gameOverFlag = false;
+            gameRunning = true;
+            
+            player.position.set(0, 0, 10); // Reset player position
+
+            updateHUD();
+            closeMessageBox();
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            gameOverFlag = true;
+
+            // --- Sound: Player Death ---
+            if (audioContextReady) {
+                deathSound.triggerAttackRelease("C1", "1n");
+            }
+
+            const messageBox = createMessageBox(
+                "GAME OVER!",
+                `Your adventure ends here. Final Score: ${score}. Level Reached: ${level}.`,
+                "Press SPACE to Restart",
+                () => {
+                    initGame();
+                }
+            );
+            document.getElementById('message-container').appendChild(messageBox);
+        }
+
+        function updateHUD() {
+            document.getElementById('score').textContent = `Score: ${score}`;
+            document.getElementById('lives').textContent = `Lives: ${Math.max(0, lives)}`;
+        }
+
+        function getLevelConfig(lvl) {
+            const levelsConfig = [
+                { asteroidSpawnChance: 0.003, maxAsteroids: 10 },
+                { asteroidSpawnChance: 0.005, maxAsteroids: 15 },
+                { asteroidSpawnChance: 0.008, maxAsteroids: 20 },
+                { asteroidSpawnChance: 0.012, maxAsteroids: 25 },
+                { asteroidSpawnChance: 0.015, maxAsteroids: 30 }
+            ];
+            return levelsConfig[Math.min(lvl - 1, levelsConfig.length - 1)];
+        }
+        
+        // --- Input and Event Handlers ---
+        
+        function updateCanvasBounds() {
+            canvasBounds = renderer.domElement.getBoundingClientRect();
+        }
+
+        window.addEventListener('resize', () => {
+            const width = 800;
+            const height = 600;
+            renderer.setSize(width, height);
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            updateCanvasBounds();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!gameRunning || gameOverFlag) return;
+            
+            // Start audio context on first interaction
+            startAudioContext();
+
+            // Convert screen coordinates to normalized coordinates (-1 to 1)
+            const x = (e.clientX - canvasBounds.left) / canvasBounds.width; // 0 to 1
+            const y = (e.clientY - canvasBounds.top) / canvasBounds.height; // 0 to 1
+
+            mouseX = (x * 2) - 1; // -1 to 1
+            mouseY = -(y * 2) + 1; // 1 to -1 (Y axis is inverted in 3D world vs screen)
+        });
+        
+        window.addEventListener('click', (e) => {
+             if (gameRunning && !gameOverFlag) {
+                 startAudioContext();
+                 createBullet();
+             }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            
+            startAudioContext();
+            
+            // --- SHOOT LOGIC (Space bar only) ---
+            if (key === ' ' && gameRunning && !gameOverFlag) {
+                const currentTime = performance.now();
+                if (currentTime - lastShootTime > shootDelay) {
+                    createBullet();
+                    lastShootTime = currentTime;
+                }
+                e.preventDefault(); // Prevent page scroll
+            }
+            
+            // --- RESTART LOGIC ---
+            if (gameOverFlag && key === ' ') {
+                initGame();
+                e.preventDefault(); 
+                return;
+            }
+            
+            // --- PAUSE LOGIC ---
+            if (key === 'p' && !gameOverFlag) {
+                gameRunning = !gameRunning;
+                if (gameRunning) {
+                    spawnMessage('Game Resumed', 'yellow');
+                } else {
+                    spawnMessage('Game Paused', 'yellow');
+                }
+            }
+        });
+
+        // --- Utility Functions ---
+
+        function spawnMessage(text, color, duration = 1500) {
+            const msgEl = document.createElement('div');
+            msgEl.textContent = text;
+            msgEl.style.cssText = `
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                color: ${color};
+                font-size: 2.5em;
+                font-weight: bold;
+                pointer-events: none;
+                z-index: 500;
+                opacity: 1;
+                transition: opacity 1s ease-out, transform 1s ease-out;
+                text-shadow: 0 0 15px ${color};
+            `;
+            document.body.appendChild(msgEl);
+
+            setTimeout(() => {
+                msgEl.style.opacity = '0';
+                msgEl.style.transform = 'translate(-50%, -70%)';
+            }, duration);
+
+            setTimeout(() => {
+                if (msgEl.parentElement) {
+                    msgEl.parentElement.removeChild(msgEl);
+                }
+            }, duration + 1000);
+        }
+
+        function createMessageBox(title, body, buttonText, buttonAction) {
+            closeMessageBox(); 
+            const box = document.createElement('div');
+            box.className = 'message-box';
+            box.innerHTML = `
+                <h2>${title}</h2>
+                <p style="color:#eee;">${body}</p>
+                <button id="msg-button">${buttonText}</button>
+            `;
+            box.querySelector('#msg-button').onclick = () => {
+                buttonAction();
+                closeMessageBox(); 
+            };
+            return box;
+        }
+        
+        function closeMessageBox() {
+            const container = document.getElementById('message-container');
+            container.innerHTML = '';
+        }
+
+        // --- Initialization ---
+        window.onload = function() {
+            initThreeJS();
+            initGame();
+            animate(0); // Start the 3D rendering loop
+            
+            // Add click listener to start audio context
+            document.body.addEventListener('click', startAudioContext, { once: true });
+        };
+        
+    </script>
+</body>
+</html>
