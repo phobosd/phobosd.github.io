@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Space Odyssey: Asteroid Blaster</title>
+    <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
     <style>
         body {
             margin: 0;
@@ -93,8 +94,9 @@
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     
     <div id="controls">
-        <p>Move: <kbd>&#8592; &#8594;</kbd> or <kbd>A D</kbd> | Shoot: <kbd>SPACE</kbd></p>
+        <p>Move: <kbd>&#8592; &#8594; &#8593; &#8595;</kbd> or <kbd>W A S D</kbd> | Shoot: <kbd>SPACE</kbd></p>
         <p>Pause: <kbd>P</kbd></p>
+        <p id="audio-note" style="color:#ffcc00; font-size: 0.9em;">Click or Press a Key to Enable Sound!</p>
     </div>
 
     <div id="message-container"></div>
@@ -114,10 +116,44 @@
         // --- Game Arrays ---
         let bullets = [];
         let enemies = [];
-        let asteroids = []; // New array for asteroids
+        let asteroids = [];
         let particles = [];
         let keys = {};
 
+        // --- Tone.js Sound Setup ---
+        const fireSynth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "triangle" },
+            envelope: { attack: 0.001, decay: 0.1, sustain: 0.0, release: 0.1 }
+        }).toDestination();
+
+        const explosionNoise = new Tone.NoiseSynth({
+            noise: { type: "white" },
+            envelope: { attack: 0.01, decay: 0.5, sustain: 0, release: 0.2 }
+        }).toDestination();
+
+        const deathSound = new Tone.MembraneSynth({
+            pitchDecay: 0.05,
+            octaves: 8,
+            envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.5 },
+            volume: -5
+        }).toDestination();
+
+        let audioContextReady = false;
+
+        // Function to ensure audio context starts on user interaction
+        function startAudioContext() {
+            if (Tone.context.state !== 'running') {
+                Tone.start().then(() => {
+                    audioContextReady = true;
+                    document.getElementById('audio-note').style.display = 'none';
+                    console.log("Audio Context Started");
+                });
+            } else {
+                audioContextReady = true;
+                document.getElementById('audio-note').style.display = 'none';
+            }
+        }
+        
         // --- Timing Variables ---
         let lastShootTime = 0;
         let shootDelay = 200; // ms between player shots
@@ -128,7 +164,7 @@
         // --- Starfield Background ---
         const stars = [];
         const numStars = 200;
-        const starSpeed = 0.5; // Base speed, scaled by level
+        const starSpeed = 2.0; // Increased base speed to feel more like flying
         for (let i = 0; i < numStars; i++) {
             stars.push({
                 x: Math.random() * canvas.width,
@@ -167,7 +203,7 @@
             return Math.floor(Math.random() * (max - min + 1)) + min;
         }
 
-        // --- Game Entity Classes ---
+        // --- Game Entity Classes (Bullet, Enemy, Asteroid, Particle) remain the same ---
 
         // Bullet Class (Used for both player and enemy shots)
         class Bullet {
@@ -347,7 +383,7 @@
             player.x = canvas.width / 2 - 25;
             player.y = canvas.height - 70;
             gameOverFlag = false;
-            gameRunning = true; // <-- FIX: Ensure the game loop starts running again
+            gameRunning = true;
 
             // Initial fresh start, populate the first set
             console.log("Game started/restarted.");
@@ -367,6 +403,11 @@
                 const bulletY = player.y;
                 bullets.push(new Bullet(bulletX, bulletY, -8, 4, 10, '#00ff00')); // Green player bullet
                 lastShootTime = currentTime;
+
+                // --- Sound: Firing ---
+                if (audioContextReady) {
+                    fireSynth.triggerAttackRelease("C5", "16n");
+                }
             }
         }
 
@@ -374,16 +415,36 @@
             for (let i = 0; i < count; i++) {
                 particles.push(new Particle(x, y, colorRGB));
             }
+            // --- Sound: Explosion ---
+            if (audioContextReady) {
+                explosionNoise.triggerAttackRelease(0.2);
+            }
         }
 
         function updateGame(deltaTime) {
             // --- Player Movement ---
+            const newSpeed = player.speed * (deltaTime / frameTime);
+            
+            // Horizontal
             if (keys['ArrowLeft'] || keys['a']) {
-                player.x = Math.max(0, player.x - player.speed * (deltaTime / frameTime));
+                player.x = Math.max(0, player.x - newSpeed);
             }
             if (keys['ArrowRight'] || keys['d']) {
-                player.x = Math.min(canvas.width - player.width, player.x + player.speed * (deltaTime / frameTime));
+                player.x = Math.min(canvas.width - player.width, player.x + newSpeed);
             }
+
+            // Vertical (New)
+            // Restrict vertical movement to the bottom 40% of the screen
+            const minY = canvas.height * 0.6; 
+            const maxY = canvas.height - player.height;
+
+            if (keys['ArrowUp'] || keys['w']) {
+                player.y = Math.max(minY, player.y - newSpeed);
+            }
+            if (keys['ArrowDown'] || keys['s']) {
+                player.y = Math.min(maxY, player.y + newSpeed);
+            }
+
             if (keys[' ']) {
                 playerShoot(lastTimestamp);
             }
@@ -403,7 +464,7 @@
 
             // --- Spawn Logic ---
             const config = getLevelConfig(level);
-            const currentTime = performance.now();
+            // const currentTime = performance.now(); // Not used here, removing for cleaner code
 
             // Spawn Enemies
             if (enemies.length < config.maxEnemies && Math.random() < config.enemySpawnChance) {
@@ -588,6 +649,11 @@
             gameRunning = false;
             gameOverFlag = true;
 
+            // --- Sound: Player Death ---
+            if (audioContextReady) {
+                deathSound.triggerAttackRelease("C1", "1n");
+            }
+
             const messageBox = createMessageBox(
                 "GAME OVER!",
                 `Your adventure ends here. Final Score: ${score}. Level Reached: ${level}.`,
@@ -669,7 +735,6 @@
             `;
             box.querySelector('#msg-button').onclick = () => {
                 buttonAction();
-                // Since the button is now just for closing, we rely on the keydown listener for restart
                 closeMessageBox(); 
             };
             return box;
@@ -685,14 +750,16 @@
         window.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
             
-            // --- NEW RESTART LOGIC ---
+            // Start audio context on first key press
+            startAudioContext();
+            
+            // --- RESTART LOGIC ---
             if (gameOverFlag && key === ' ') {
                 score = 0;
                 lives = 3;
                 level = 1;
                 initGame();
                 closeMessageBox();
-                // Prevent space from immediately shooting or causing issues on restart
                 keys[key] = false; 
                 e.preventDefault(); 
                 return;
@@ -718,6 +785,9 @@
         
         // --- Initialization ---
         window.onload = function() {
+            // Add click listener to start audio context
+            document.body.addEventListener('click', startAudioContext, { once: true });
+            
             initGame();
         };
 
