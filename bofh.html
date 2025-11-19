@@ -17,7 +17,7 @@
             overflow: hidden;
         }
 
-        /* Subtle CRT/Glow effect on the main screen */
+        /* Subtle CRT/Glow effect on the main screen and modal */
         .crt-screen {
             box-shadow: 0 0 15px #00ff66, inset 0 0 10px rgba(0, 255, 102, 0.5);
             border: 2px solid #00ff66;
@@ -61,9 +61,44 @@
         .fix-button:hover {
             box-shadow: 0 0 10px #00cc00, 0 0 20px #00cc00;
         }
+        
+        /* Modal specific styles */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.95);
+            backdrop-filter: blur(2px);
+        }
     </style>
 </head>
 <body class="p-4 h-screen flex flex-col">
+
+    <!-- INSTRUCTIONS MODAL (Hidden initially, shown in JS initGame) -->
+    <div id="instructions-modal" class="fixed inset-0 modal-overlay flex justify-center items-center z-50">
+        <div class="crt-screen p-8 rounded-lg max-w-xl w-full bg-[#1a1a2b] text-center">
+            <h2 class="text-4xl uppercase font-bold text-red-400 mb-4">-- HELL'S HELP-DESK PROTOCOL --</h2>
+            <div class="text-left text-lg space-y-3 mb-6">
+                <p>You are the Operator, managing the corporate network. Your mission is to maximize **CHAOS** while avoiding **DETECTION**.</p>
+                
+                <p class="border-t border-b border-green-500 py-3 mt-4">
+                    <span class="text-red-400 font-bold text-xl block">END GAME OBJECTIVE:</span>
+                    <span class="block">Increase **CHAOS** to 100% to trigger the <span class="text-yellow-300">FAILOVER APOCALYPSE</span> (VICTORY).</span>
+                </p>
+                
+                <p><span class="text-yellow-300 font-bold">DETECTION METER:</span> If this reaches 100%, Audit finds you, and you are **FIRED** (GAME OVER).</p>
+                
+                <h3 class="text-xl uppercase font-bold mt-4 text-green-400">:: TICKET MANAGEMENT ACTIONS ::</h3>
+                <ul class="list-disc ml-6 space-y-1">
+                    <li><span class="text-red-400">// SABOTAGE:</span> High CHAOS gain, but high DETECTION risk. (Root Shell Cannon)</li>
+                    <li><span class="text-green-400">// FIX:</span> Reduces DETECTION and slightly reduces CHAOS. (Patch-and-Pray)</li>
+                    <li><span class="text-yellow-300">// IGNORE:</span> Removes the ticket, but incurs a steep DETECTION penalty over time due to neglect.</li>
+                </ul>
+            </div>
+            <button id="start-game-button" class="p-3 bg-green-700 border-2 border-green-500 action-button text-xl uppercase font-bold w-3/4 mx-auto block">
+                [[ ENGAGE SYSTEMS & CAUSE PROBLEMS ]]
+            </button>
+        </div>
+    </div>
+    
+    <!-- GAME CONTAINER -->
     <div id="game-container" class="w-full max-w-6xl mx-auto flex flex-col flex-grow crt-screen p-4 rounded-lg">
         <!-- HEADER -->
         <div class="flex justify-between items-center mb-4 pb-2 border-b border-green-500">
@@ -143,6 +178,8 @@
         const adminLog = document.getElementById('admin-log');
         const ticketQueue = document.getElementById('ticket-queue');
         const gameMessage = document.getElementById('game-message');
+        const instructionsModal = document.getElementById('instructions-modal');
+        const startGameButton = document.getElementById('start-game-button');
 
         // --- TICKET DATA (Inspired by the GDD) ---
         const ticketTemplates = [
@@ -250,7 +287,7 @@
                         <span class="text-lg font-bold">TICKET #${ticket.id}: ${ticket.title}</span>
                         <span class="text-xs ${priorityClass}">${ticket.priority.toUpperCase()} | LUSER: ${ticket.luser}</span>
                     </div>
-                    <p class="text-sm text-gray-400 mb-3">Impact: Chaos +${ticket.sabotageEffect.chaos}, Detection +${ticket.sabotageEffect.detection} (Sabotage) / Chaos ${ticket.fixEffect.chaos}, Detection ${ticket.fixEffect.detection} (Fix)</p>
+                    <p class="text-sm text-gray-400 mb-3">Impact: Chaos ${ticket.sabotageEffect.chaos >= 0 ? '+' : ''}${ticket.sabotageEffect.chaos}, Detection ${ticket.sabotageEffect.detection >= 0 ? '+' : ''}${ticket.sabotageEffect.detection} (Sabotage) / Chaos ${ticket.fixEffect.chaos >= 0 ? '+' : ''}${ticket.fixEffect.chaos}, Detection ${ticket.fixEffect.detection >= 0 ? '+' : ''}${ticket.fixEffect.detection} (Fix)</p>
                     <div class="flex space-x-3">
                         <button onclick="resolveTicket(${ticket.id}, 'SABOTAGE')" class="sabotage-button flex-1 p-2 rounded border-2 border-red-500 action-button">
                             // SABOTAGE (Root Shell Cannon)
@@ -319,25 +356,38 @@
         let gameLoopInterval;
         let ticketSpawnInterval;
 
-        const initGame = () => {
-            // Set up initial state (in case of restart)
-            state.chaos = 10; // Start with a little potential
-            state.detection = 0;
-            state.tickets = [];
-            state.isGameOver = false;
+        const startGame = () => {
+            instructionsModal.classList.add('hidden');
+            log("Core systems online. Help-Desk operational.", 'INFO');
             
-            // Clear UI elements
-            gameMessage.classList.add('hidden');
-            gameMessage.classList.remove('bg-green-900', 'border-green-500');
-            gameMessage.classList.add('bg-red-900', 'border-red-500');
-            adminLog.innerHTML = '<li><span class="text-blue-400">[00:00]</span> Initializing systems. Welcome, Operator.</li>';
-
             // Start intervals
             gameLoopInterval = setInterval(gameLoop, TICK_RATE);
             ticketSpawnInterval = setInterval(spawnTicket, LUSER_SPAWN_INTERVAL);
 
             // Spawn first ticket immediately
             spawnTicket();
+            renderState();
+        }
+
+        const initGame = () => {
+            // Set up initial state 
+            state.chaos = 10; // Start with a little potential
+            state.detection = 0;
+            state.tickets = [];
+            state.isGameOver = false;
+            state.ticketIdCounter = 1;
+
+            // Clear UI elements
+            gameMessage.classList.add('hidden');
+            gameMessage.classList.remove('bg-green-900', 'border-green-500');
+            gameMessage.classList.add('bg-red-900', 'border-red-500');
+            adminLog.innerHTML = '<li><span class="text-blue-400">[00:00]</span> Initializing systems. Welcome, Operator.</li>';
+
+            // Show the modal and set up the start button
+            instructionsModal.classList.remove('hidden'); 
+            startGameButton.onclick = startGame;
+            
+            // Initial render (no game loop yet)
             renderState();
         };
 
