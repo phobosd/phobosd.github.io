@@ -125,9 +125,10 @@
                 
                 <h3 class="text-xl uppercase font-bold mt-4 text-green-400">:: TICKET MANAGEMENT ACTIONS ::</h3>
                 <ul class="list-disc ml-6 space-y-1">
-                    <li><span class="text-red-400">// ROOT SHELL CANNON (Sabotage):</span> High CHAOS gain, high DETECTION risk.</li>
+                    <li><span class="text-red-400">// ROOT SHELL CANNON (Sabotage):</span> High CHAOS gain, high DETECTION risk. **RISKIEST.**</li>
                     <li><span class="text-green-400">// PATCH-AND-PRAY (Fix):</span> Reduces DETECTION and slightly reduces CHAOS.</li>
-                    <li><span class="text-blue-400">// REBOOT GRENADE (Quick Clear):</span> Immediate ticket clear. Small CHAOS boost, but guaranteed DETECTION cost.</li>
+                    <li><span class="text-blue-400">// REBOOT GRENADE (Quick Clear):</span> Immediate clear. Detection cost, small CHAOS boost.</li>
+                    <li class="mt-4 text-red-400">WARNING: Repeated high-risk actions (Sabotage/Reboot) trigger immediate scrutiny!</li>
                 </ul>
             </div>
             <!-- Added onclick to start the Tone.js audio context -->
@@ -305,14 +306,19 @@
         const SPECIAL_EVENT_CHANCE = 0.05; // 5% chance of a special event per game loop tick (rare, high impact)
 
         // --- DIFFICULTY CONSTANTS (NEW) ---
-        const LUSER_AUDIT_RESISTANCE = { // Idea 1: Detection multiplier for high-risk actions
-            LOW: 1.0,  // Standard Luser (Marketing, Sales)
-            AUDITABLE: 1.5, // High scrutiny (HR, Finance, Security)
-            CRITICAL: 2.5, // C-Suite (CEO, Legal)
+        // Initial values for Luser Audit Resistance (These will be dynamically changed)
+        const LUSER_AUDIT_RESISTANCE_BASE = { 
+            LOW: 1.0,  
+            AUDITABLE: 1.5, 
+            CRITICAL: 2.5, 
         };
+        const SABOTAGE_SPAM_PENALTY = 40; // Idea 1: Detection cost for spamming Sabotage
+        const SABOTAGE_SPAM_THRESHOLD = 1; // Idea 1: Number of consecutive Sabotage actions allowed (0 = spam penalty immediately applied)
+        const FIX_DECAY_MULTIPLIER = 0.5; // Idea 2: Fix action detection reduction effectiveness (50%)
         const BACKLOG_THRESHOLD = 5; // Idea 3: Max number of tickets before penalty starts
         const BACKLOG_PENALTY_PER_TICKET = 2; // Idea 3: Detection added per ticket over the threshold
-        
+        const LEVEL_UP_TIME = 60; // Game time in seconds to increase difficulty level
+
         // --- GAME STATE ---
         let state = {
             chaos: 10,
@@ -322,6 +328,8 @@
             ticketIdCounter: 1,
             gameLoopInterval: null,
             ticketSpawnInterval: null,
+            lastAction: null, // Idea 1: Tracks the last action (null, 'SABOTAGE', 'FIX', 'REBOOT')
+            currentLevel: 1, // Idea 3: Current difficulty level
         };
 
         // --- DOM REFERENCES ---
@@ -337,7 +345,6 @@
         const startGameButton = document.getElementById('start-game-button');
 
         // --- TICKET DATA (Expanded Content) ---
-        // NOTE: Added priority field to fix TypeError in renderTickets
         const ticketTemplates = [
             { title: "Printer is Tilted", luser: "Marketing Marge", luserType: "LOW", priority: "Medium", sabotageEffect: { chaos: 15, detection: 5 }, fixEffect: { chaos: -3, detection: -5 }, rebootEffect: { chaos: 5, detection: 3 } },
             { title: "Lost Password (Again)", luser: "Sales Steve", luserType: "LOW", priority: "Low", sabotageEffect: { chaos: 5, detection: 2 }, fixEffect: { chaos: -1, detection: -2 }, rebootEffect: { chaos: 1, detection: 1 } },
@@ -350,7 +357,6 @@
             { title: "Install 'Minesweeper' now", luser: "Admin Amy", luserType: "LOW", priority: "Medium", sabotageEffect: { chaos: 8, detection: 3 }, fixEffect: { chaos: -2, detection: -4 }, rebootEffect: { chaos: 3, detection: 2 } },
             { title: "My PC is demanding sacrifices", luser: "Legal Larry", luserType: "CRITICAL", priority: "Critical", sabotageEffect: { chaos: 25, detection: 6 }, fixEffect: { chaos: -4, detection: -6 }, rebootEffect: { chaos: 10, detection: 3 } },
             { title: "Where is the 'Any' key?", luser: "Operations Oscar", luserType: "LOW", priority: "Low", sabotageEffect: { chaos: 18, detection: 7 }, fixEffect: { chaos: -1, detection: -4 }, rebootEffect: { chaos: 5, detection: 3 } },
-            // Expanded Ticket Content (from previous steps)
             { title: "Screen is sideways", luser: "HR Hal", luserType: "AUDITABLE", priority: "Medium", sabotageEffect: { chaos: 5, detection: 2 }, fixEffect: { chaos: -5, detection: -1 }, rebootEffect: { chaos: 1, detection: 1 } },
             { title: "Can't install my custom emoji pack", luser: "Marketing Marge", luserType: "LOW", priority: "Medium", sabotageEffect: { chaos: 10, detection: 5 }, fixEffect: { chaos: -2, detection: -3 }, rebootEffect: { chaos: 4, detection: 2 } },
             { title: "My webcam has been hacked", luser: "Security Sam", luserType: "AUDITABLE", priority: "High", sabotageEffect: { chaos: 30, detection: 20 }, fixEffect: { chaos: -10, detection: -15 }, rebootEffect: { chaos: 15, detection: 10 } },
@@ -358,10 +364,8 @@
             { title: "Need to change my desktop background to a picture of my dog", luser: "Finance Fiona", luserType: "AUDITABLE", priority: "Low", sabotageEffect: { chaos: 2, detection: 1 }, fixEffect: { chaos: -1, detection: -1 }, rebootEffect: { chaos: 0, detection: 0 } },
         ];
         
-        // --- RANDOM EVENTS (Minor, regular noise) ---
-        // Events are used by Idea 2 (Dynamic Threshold)
+        // --- RANDOM EVENTS ---
         const randomEvents = [
-            // Low Impact Events (Value <= 5)
             { type: 'DETECTION', value: 10, log: 'Unexpected Security Audit: Randomly checking logs!'},
             { type: 'DETECTION', value: 5, log: 'Luser complained about network lag to a manager.'},
             { type: 'CHAOS', value: 5, log: 'Marketing Marge uploaded a massive video file to the shared drive.'},
@@ -369,8 +373,6 @@
             { type: 'DETECTION', value: -5, log: 'HR Hal is distracted by a donut delivery. Detection decreased.'},
             { type: 'CHAOS', value: 7, log: 'Intern Tim accidentally broadcast his Spotify playlist to the entire office intercom system.'},
             { type: 'DETECTION', value: 4, log: 'Security Sam noticed unusually high network pings during lunch hour.'},
-
-            // High Impact Events (Value > 5) - Biased toward when Chaos > 60
             { type: 'CHAOS', value: 15, log: 'Janitor tripped over a server cable. Minor outage initiated.'},
             { type: 'CHAOS', value: 12, log: 'A squirrel chewed through the fiber optic line outside. Slow internet.'},
             { type: 'DETECTION', value: 8, log: 'CEO Brenda noticed the default Windows background is still present on her monitor.'},
@@ -460,9 +462,7 @@
          */
         const restartGame = () => {
             log("Attempting system reboot...", 'INFO');
-            // Cleanly stop any running intervals first
             stopGame(); 
-            // Call initGame to reset state and show the instructions modal
             initGame();
         };
         
@@ -475,7 +475,6 @@
                 stopGame();
                 
                 // --- Loss Notification ---
-                // Show the fixed overlay, which handles centering and opacity
                 gameMessage.classList.remove('hidden');
                 
                 gameMessageContent.classList.remove('bg-green-900', 'border-green-500');
@@ -496,7 +495,6 @@
                 stopGame();
                 
                 // --- Win Notification ---
-                // Show the fixed overlay, which handles centering and opacity
                 gameMessage.classList.remove('hidden');
                 
                 gameMessageContent.classList.remove('bg-red-900', 'border-red-500');
@@ -533,35 +531,48 @@
 
             const ticket = state.tickets[index];
             let message;
-            let effect = ticket.sabotageEffect; // Default to sabotage for error prevention
+            let effect = {}; // Initialize effect object
             let actionName;
-
+            let detectionDelta;
+            
+            // --- IDEA 1 & 2: Base Calculation and Audit Resistance ---
             if (action === 'SABOTAGE') {
                 effect = ticket.sabotageEffect;
                 actionName = 'Root Shell Cannon';
-                message = `Executed **${actionName}** on #${ticket.id}. Luser ${ticket.luser} is now thoroughly confused.`;
-                SoundManager.playSabotage(); // Play sabotage sound
+                
+                // IDEA 2 (Part 1): Sabotage Spam Check
+                if (state.lastAction === 'SABOTAGE') {
+                    // Massive penalty for spamming sabotage
+                    detectionDelta = effect.detection + SABOTAGE_SPAM_PENALTY;
+                    message = `SYSTEM ALERT: **${actionName}** spam detected on #${ticket.id}! Immediate scrutiny triggered. D +${SABOTAGE_SPAM_PENALTY} base penalty.`;
+                } else {
+                    detectionDelta = effect.detection;
+                    message = `Executed **${actionName}** on #${ticket.id}. Luser ${ticket.luser} is now thoroughly confused.`;
+                }
+                SoundManager.playSabotage();
             } else if (action === 'FIX') {
                 effect = ticket.fixEffect;
                 actionName = 'Patch-and-Pray Utility';
-                message = `Used **${actionName}** on #${ticket.id}. Ticket resolved (Boring).`;
-                SoundManager.playFix(); // Play fix sound
+                
+                // IDEA 3: Reduced effectiveness of Fix detection decay
+                detectionDelta = Math.round(effect.detection * FIX_DECAY_MULTIPLIER);
+                
+                message = `Used **${actionName}** on #${ticket.id}. Ticket resolved (Boring). Decay effectiveness: ${FIX_DECAY_MULTIPLIER * 100}%.`;
+                SoundManager.playFix();
             } else if (action === 'REBOOT') {
                 effect = ticket.rebootEffect;
                 actionName = 'Reboot Grenade';
+                detectionDelta = effect.detection;
                 message = `Deployed **${actionName}** on #${ticket.id}. Problem temporarily removed.`;
-                SoundManager.playReboot(); // Play reboot sound
+                SoundManager.playReboot();
             } else {
                  return;
             }
 
-            let detectionDelta = effect.detection;
-            
-            // --- IDEA 1: LUSER AUDIT RESISTANCE ---
-            const resistanceFactor = LUSER_AUDIT_RESISTANCE[ticket.luserType] || 1.0;
-
-            // Only apply resistance multiplier if detection is positive (risk) and the action is high-risk
-            if ((action === 'SABOTAGE' || action === 'REBOOT') && detectionDelta > 0) {
+            // IDEA 1 (Cont.): Luser Audit Resistance Multiplier (applies only to actions with POSITIVE risk)
+            if (detectionDelta > 0) {
+                const resistanceFactor = LUSER_AUDIT_RESISTANCE_BASE[ticket.luserType] || 1.0;
+                
                 if (resistanceFactor > 1.0) {
                     const amplifiedDetection = Math.round(detectionDelta * resistanceFactor);
                     const bonusDetection = amplifiedDetection - detectionDelta;
@@ -569,11 +580,11 @@
                     message += ` (AUDIT PENALTY: ${ticket.luser} resisted. D +${bonusDetection} added)`;
                 }
             }
-            // --- END IDEA 1 ---
 
-
+            // Apply state changes
             state.chaos += effect.chaos;
             state.detection += detectionDelta;
+            state.lastAction = action; // Update last action tracker
             
             // Add the final impact to the log message
             message += ` (C ${effect.chaos >= 0 ? '+' : ''}${effect.chaos}, D ${detectionDelta >= 0 ? '+' : ''}${detectionDelta})`;
@@ -683,6 +694,26 @@
             }
         }
         
+        // --- DIFFICULTY TUNING FUNCTION (IDEA 3) ---
+        const updateDifficulty = () => {
+            const newLevel = Math.floor(gameTimeSeconds / LEVEL_UP_TIME) + 1;
+
+            if (newLevel > state.currentLevel) {
+                state.currentLevel = newLevel;
+
+                // Example of Progressive Resistance: Increase Critical Luser resistance
+                if (newLevel === 2) {
+                    LUSER_AUDIT_RESISTANCE_BASE.AUDITABLE = 2.0;
+                    LUSER_AUDIT_RESISTANCE_BASE.CRITICAL = 3.5;
+                    log('**SYSTEM WIDE AUDIT UPGRADE (Level 2)!** Critical Lusers now amplify Detection greatly.', 'CRITICAL');
+                } else if (newLevel >= 3) {
+                    LUSER_AUDIT_RESISTANCE_BASE.AUDITABLE = 2.5;
+                    LUSER_AUDIT_RESISTANCE_BASE.CRITICAL = 5.0; // Extreme amplification
+                    log('**CORPORATE OVERSIGHT MAXIMIZED (Level 3)!** Audit systems are hyper-sensitive. Good luck.', 'CRITICAL');
+                }
+            }
+        };
+
         // --- GAME LOOP ---
         const gameLoop = () => {
             if (state.isGameOver) return;
@@ -710,7 +741,10 @@
             // 2. Random Environmental Events
             triggerRandomEvent();
 
-            // 3. Render State
+            // 3. Update Difficulty Level
+            updateDifficulty();
+
+            // 4. Render State
             renderState();
         };
 
@@ -751,6 +785,12 @@
             state.ticketIdCounter = 1;
             gameTimeSeconds = 0;
             triggeredSpecialEvents.clear();
+            state.lastAction = null; // Reset last action tracker
+            state.currentLevel = 1; // Reset level
+
+            // Reset dynamic difficulty bases to initial values
+            LUSER_AUDIT_RESISTANCE_BASE.AUDITABLE = 1.5;
+            LUSER_AUDIT_RESISTANCE_BASE.CRITICAL = 2.5;
             
             // Clear UI elements
             gameMessage.classList.add('hidden');
