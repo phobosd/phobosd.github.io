@@ -10,47 +10,47 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <!-- Use a retro-styled font -->
     <style>
+        /* Changed to a more subtle gray/blue background and a muted cyan text color */
         @import url('https://fonts.fonts.googleapis.com/css2?family=VT323&display=swap');
         body {
             font-family: 'VT323', monospace;
-            background-color: #0d0c1d; /* Deep Cyber Blue */
-            color: #00ff66; /* Neon Green */
-            text-shadow: 0 0 5px #00ff66;
-            /* Changed to allow scrolling on the entire body if content overflows (important for mobile stacking) */
+            background-color: #1a1a2e; /* Darker, less saturated blue */
+            color: #88eecc; /* Soft Cyan/Mint Green */
+            text-shadow: 0 0 1px rgba(136, 238, 204, 0.5); /* Greatly reduced text shadow */
             overflow-y: auto; 
-            /* Ensure full height for mobile responsiveness */
             height: 100vh;
         }
 
         /* Subtle CRT/Glow effect on the main screen and modal */
         .crt-screen {
-            box-shadow: 0 0 15px #00ff66, inset 0 0 10px rgba(0, 255, 102, 0.5);
-            border: 2px solid #00ff66;
-            animation: flicker 0.15s infinite alternate;
+            /* Reduced glow and used softer colors */
+            box-shadow: 0 0 8px #88eecc, inset 0 0 5px rgba(136, 238, 204, 0.3);
+            border: 1px solid #88eecc;
+            /* Animation speed significantly reduced to make it less distracting */
+            animation: flicker 1.5s infinite alternate; 
         }
 
         @keyframes flicker {
             0% { opacity: 1; }
-            100% { opacity: 0.98; }
+            100% { opacity: 0.99; } /* Very subtle flicker */
         }
 
         .meter-bar {
             transition: width 0.3s ease-in-out;
         }
 
-        /* Custom glow button style */
+        /* Custom glow button style - Reduced intensity */
         .action-button {
             transition: all 0.1s ease;
-            box-shadow: 0 0 5px rgba(0, 255, 102, 0.5);
-            /* Consistent button padding and text size */
+            box-shadow: 0 0 3px rgba(136, 238, 204, 0.5); /* Reduced glow */
             font-size: 0.9rem;
             padding: 0.5rem 0.75rem;
         }
 
         .action-button:hover {
-            box-shadow: 0 0 10px #00ff66, 0 0 20px #00ff66;
+            box-shadow: 0 0 6px #88eecc, 0 0 12px #88eecc; /* Reduced hover intensity */
             transform: scale(1.02);
-            background-color: #1a1a2b;
+            background-color: #2b2b40; /* Slightly lighter background on hover */
         }
         
         /* Ensure responsive layout adjustments */
@@ -67,36 +67,36 @@
             }
         }
 
-        /* Custom color for the three actions */
+        /* Custom color for the three actions - Muted versions */
         .sabotage-button {
-            background-color: #7f0000;
-            border-color: #ff0000;
-            box-shadow: 0 0 5px #ff0000;
+            background-color: #4d0000; /* Darker red */
+            border-color: #cc6666; /* Muted red border */
+            box-shadow: 0 0 3px #cc6666;
         }
         .sabotage-button:hover {
-            box-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000;
+            box-shadow: 0 0 6px #cc6666, 0 0 12px #cc6666;
         }
         .fix-button {
-            background-color: #004d00;
-            border-color: #00cc00;
-            box-shadow: 0 0 5px #00cc00;
+            background-color: #003300; /* Darker green */
+            border-color: #66cc66; /* Muted green border */
+            box-shadow: 0 0 3px #66cc66;
         }
         .fix-button:hover {
-            box-shadow: 0 0 10px #00cc00, 0 0 20px #00cc00;
+            box-shadow: 0 0 6px #66cc66, 0 0 12px #66cc66;
         }
         .reboot-button {
             background-color: #333344;
-            border-color: #9999ff;
-            box-shadow: 0 0 5px #9999ff;
+            border-color: #8888ee; /* Muted blue border */
+            box-shadow: 0 0 3px #8888ee;
         }
         .reboot-button:hover {
-            box-shadow: 0 0 10px #9999ff, 0 0 20px #9999ff;
+            box-shadow: 0 0 6px #8888ee, 0 0 12px #8888ee;
         }
         
         /* Modal specific styles */
         .modal-overlay {
-            background-color: rgba(0, 0, 0, 0.95);
-            backdrop-filter: blur(2px);
+            background-color: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(1px); /* Slightly reduced blur */
         }
         
         /* Log style for better readability */
@@ -110,12 +110,12 @@
 
     <!-- INSTRUCTIONS MODAL (Hidden initially, shown in JS initGame) -->
     <div id="instructions-modal" class="fixed inset-0 modal-overlay flex justify-center items-center z-50">
-        <div class="crt-screen p-8 rounded-lg max-w-xl w-11/12 bg-[#1a1a2b] text-center">
+        <div class="crt-screen p-8 rounded-lg max-w-xl w-11/12 bg-[#2b2b40] text-center">
             <h2 class="text-4xl uppercase font-bold text-red-400 mb-4">-- HELL'S HELP-DESK PROTOCOL --</h2>
             <div class="text-left text-lg space-y-3 mb-6">
                 <p>You are the Operator, managing the corporate network. Your mission is to maximize **CHAOS** while avoiding **DETECTION**.</p>
                 
-                <p class="border-t border-b border-green-500 py-3 mt-4">
+                <p class="border-t border-b border-[#88eecc] py-3 mt-4">
                     <span class="text-red-400 font-bold text-xl block">END GAME OBJECTIVE:</span>
                     <span class="block">Increase **CHAOS** to 100% to trigger the <span class="text-yellow-300">FAILOVER APOCALYPSE</span> (VICTORY).</span>
                 </p>
@@ -130,7 +130,7 @@
                 </ul>
             </div>
             <!-- Added onclick to start the Tone.js audio context -->
-            <button id="start-game-button" onclick="SoundManager.initContext();" class="p-3 bg-green-700 border-2 border-green-500 action-button text-xl uppercase font-bold w-3/4 mx-auto block">
+            <button id="start-game-button" onclick="SoundManager.initContext();" class="p-3 bg-green-700 border-2 border-[#66cc66] action-button text-xl uppercase font-bold w-3/4 mx-auto block">
                 [[ ENGAGE SYSTEMS & CAUSE PROBLEMS ]]
             </button>
         </div>
@@ -139,7 +139,7 @@
     <!-- GAME CONTAINER -->
     <div id="game-container" class="w-full max-w-6xl mx-auto flex flex-col flex-grow crt-screen p-4 rounded-lg">
         <!-- HEADER -->
-        <div class="flex flex-col sm:flex-row justify-between items-center mb-4 pb-2 border-b border-green-500">
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-4 pb-2 border-b border-[#88eecc]">
             <h1 class="text-xl sm:text-3xl uppercase font-bold text-yellow-300">[[ B.O.F.H. : HELL'S HELP-DESK ]]</h1>
             <span id="user-id" class="text-base sm:text-lg mt-2 sm:mt-0">OPERATOR-ID: PUCK-734</span>
         </div>
@@ -151,7 +151,7 @@
             <!-- LEFT COLUMN: METERS & LOG -->
             <div class="w-full sm:w-1/3 flex flex-col space-y-4">
                 <!-- Meters are fixed height -->
-                <div class="bg-[#1a1a2b] p-3 rounded-lg border border-green-500">
+                <div class="bg-[#2b2b40] p-3 rounded-lg border border-[#88eecc]">
                     <h2 class="text-xl uppercase mb-2">:: SYSTEM OVERVIEW ::</h2>
 
                     <!-- CHAOS METER -->
@@ -168,9 +168,11 @@
                 </div>
 
                 <!-- ADMIN LOG - MOBILE FIX: max-h-48 limits height on small screens, preventing queue push-off. sm:flex-grow restores full vertical fill on desktop. -->
-                <div class="max-h-48 sm:flex-grow bg-[#1a1a2b] p-3 rounded-lg border border-green-500 overflow-y-auto">
-                    <h2 class="text-xl uppercase mb-2">:: ADMIN LOG ::</h2>
-                    <ul id="admin-log" class="text-sm space-y-1">
+                <!-- The addition of flex-grow ensures this element takes up all remaining vertical space in its column -->
+                <div class="max-h-48 sm:max-h-full sm:flex-grow bg-[#2b2b40] p-3 rounded-lg border border-[#88eecc] overflow-y-auto flex flex-col">
+                    <h2 class="text-xl uppercase mb-2 flex-shrink-0">:: ADMIN LOG ::</h2>
+                    <!-- Added flex-grow to the UL element to push content to the bottom of the visible area when not full -->
+                    <ul id="admin-log" class="text-sm space-y-1 flex-grow overflow-y-auto">
                         <li><span class="text-blue-400">[00:00:00]</span> Initializing systems. Welcome, Operator.</li>
                     </ul>
                 </div>
@@ -178,7 +180,7 @@
 
             <!-- RIGHT COLUMN: TICKET QUEUE -->
             <div class="w-full sm:w-2/3 flex flex-col space-y-4">
-                <div class="flex-grow bg-[#1a1a2b] p-3 rounded-lg border border-green-500 overflow-y-auto">
+                <div class="flex-grow bg-[#2b2b40] p-3 rounded-lg border border-[#88eecc] overflow-y-auto">
                     <h2 class="text-xl uppercase mb-2">:: ACTIVE TICKET QUEUE ::</h2>
                     <div id="ticket-queue" class="space-y-4">
                         <!-- Tickets will be injected here -->
@@ -274,8 +276,9 @@
             playGameOver: function() {
                 if (this.isContextInitialized) {
                     const now = Tone.now();
+                    // FIXED: Added a slight delay to the noise synth trigger to prevent "start time must be strictly greater" error.
                     this.synthesisers.click.triggerAttackRelease(["F2", "C2"], "2n", now, 1);
-                    this.synthesisers.noise.triggerAttackRelease("4n", now, 0.5);
+                    this.synthesisers.noise.triggerAttackRelease("4n", now + 0.05, 0.5); 
                 }
             },
 
@@ -480,7 +483,8 @@
                                      'border-green-500 text-green-300';
                 
                 const ticketCard = document.createElement('div');
-                ticketCard.className = `p-3 rounded-lg bg-[#111122] border-l-4 ${priorityClass}`;
+                // Updated background color to the same as the main containers for consistency
+                ticketCard.className = `p-3 rounded-lg bg-[#2b2b40] border-l-4 ${priorityClass}`;
                 
                 // Helper to format the impact string
                 const formatImpact = (chaos, detection) => 
@@ -517,15 +521,20 @@
             if (state.isGameOver) return;
 
             if (state.detection >= MAX_VALUE) {
-                state.isGameOver = true;
+                // FIXED: Set isGameOver to true *before* triggering sound and clear functions
+                state.isGameOver = true; 
+                SoundManager.playGameOver(); // Play failure sound
+                
                 gameMessage.textContent = ">>> GAME OVER: FIRED. HR Hal and CEO Brenda just showed up. You are locked out of the network. <<<";
                 gameMessage.classList.remove('hidden');
                 log("SYSTEM SHUTDOWN. ACCESS REVOKED.", 'ERROR');
                 clearInterval(state.gameLoopInterval);
                 clearInterval(state.ticketSpawnInterval);
-                SoundManager.playGameOver(); // Play failure sound
             } else if (state.chaos >= MAX_VALUE) {
+                // FIXED: Set isGameOver to true *before* triggering sound and clear functions
                 state.isGameOver = true;
+                SoundManager.playVictory(); // Play victory sound
+                
                 gameMessage.textContent = ">>> VICTORY: FAILOVER APOCALYPSE. You've brought down the entire corporate network. Retirement achieved. <<<";
                 gameMessage.classList.remove('hidden');
                 gameMessage.classList.replace('bg-red-900', 'bg-green-900');
@@ -533,7 +542,6 @@
                 log("FAILOVER APOCALYPSE INITIATED. OPERATOR HAS GONE OFFLINE.", 'CRITICAL');
                 clearInterval(state.gameLoopInterval);
                 clearInterval(state.ticketSpawnInterval);
-                SoundManager.playVictory(); // Play victory sound
             }
         };
         
