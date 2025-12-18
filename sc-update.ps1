@@ -30,7 +30,18 @@ Write-Host "Starting RSI Launcher. Please update the LIVE universe and close/min
 Start-Process "C:\Program Files\Roberts Space Industries\RSI Launcher\RSI Launcher.exe"
 Read-Host "Press Enter once the game update is finished..."
 
-# 4. INSTALL LANGUAGE PACK & USER.CFG LOGIC
+# 4. SHADER CACHE CLEANUP (New Feature)
+$shaderPath = "$env:LOCALAPPDATA\Star Citizen"
+if (Test-Path $shaderPath) {
+    $cleanShaders = Read-Host "Would you like to clear the Shader Cache? (Recommended for new versions) (Y/N)"
+    if ($cleanShaders -eq "Y" -or $cleanShaders -eq "y") {
+        Write-Host "Clearing Shader Cache..." -ForegroundColor Yellow
+        Remove-Item -Path "$shaderPath\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Shader Cache cleared." -ForegroundColor Green
+    }
+}
+
+# 5. INSTALL LANGUAGE PACK & USER.CFG LOGIC
 Write-Host "Fetching Language Pack..." -ForegroundColor Cyan
 $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$githubRepo/releases/latest"
 $assetUrl = ($releaseInfo.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1).browser_download_url
@@ -57,11 +68,9 @@ Copy-Item -Path "$langExtract\data" -Destination $livePath -Recurse -Force
 if ($copyCfg) {
     "g_language = english" | Out-File -FilePath $cfgPath -Encoding ascii
     Write-Host "user.cfg updated." -ForegroundColor Green
-} else {
-    Write-Host "Skipping user.cfg overwrite." -ForegroundColor Yellow
 }
 
-# 5. VKB BINDINGS (VERSION SPECIFIC)
+# 6. VKB BINDINGS (VERSION SPECIFIC)
 Write-Host "Downloading VKB Bindings for $versionSearchString..." -ForegroundColor Cyan
 $bindingsZip = "$env:TEMP\Bindings.zip"
 $bindingsExtract = "$env:TEMP\BindingsExtract"
@@ -77,11 +86,10 @@ if ($targetFolder) {
     $mappingDest = "$livePath\USER\Client\0\Controls\Mappings"
     if (-not (Test-Path $mappingDest)) { New-Item -Path $mappingDest -ItemType Directory -Force }
     
-    # Specifically looking for VKB folder or files inside the version folder
     Copy-Item -Path "$($targetFolder.FullName)\*" -Destination $mappingDest -Recurse -Force
     Write-Host "Bindings for $versionSearchString installed successfully." -ForegroundColor Green
 } else {
     Write-Error "Could not find a folder named '$versionSearchString' in the Dropbox download."
 }
 
-Write-Host "`nSetup complete! You can now launch Star Citizen." -ForegroundColor Magenta
+Write-Host "`nSetup complete! Fly safe, Citizen." -ForegroundColor Magenta
