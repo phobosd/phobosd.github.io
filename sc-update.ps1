@@ -16,42 +16,45 @@ $dbInput    = Read-Host "Paste the Dropbox URL for the $vNum folder (or press En
 if ($dbInput) {
     $dropboxUrl = $dbInput -replace 'dl=0', 'dl=1'
 } else {
-    # Default fallback URL (currently 4.4 folder)
+    # Default fallback URL (4.4 folder)
     $dropboxUrl = "https://www.dropbox.com/scl/fo/hd5fllfi6ftn57dkfp4f3/AExJR6pW0EA8WUxZqc-ACK8/SC%20Alpha%204.4?dl=1&rlkey=wwm1w6p39sytpffv2nr70b31j"
 }
 
-$doUpdate   = (Read-Host "Launch RSI Launcher to update LIVE? (y/n)") -eq 'y'
 $doSwap     = (Read-Host "Rename PTU folder to LIVE? (y/n)") -eq 'y'
 $doShaders  = (Read-Host "Clear Shader Cache? (y/n)") -eq 'y'
+$doUpdate   = (Read-Host "Launch RSI Launcher to update LIVE? (y/n)") -eq 'y'
 $doLang     = (Read-Host "Install Component Language Pack? (y/n)") -eq 'y'
 $doBindings = (Read-Host "Install VKB Bindings? (y/n)") -eq 'y'
 
-# 2. FOLDER SWAP
+# 2. FOLDER SWAP (Executed BEFORE Launcher)
 if ($doSwap) {
     if (Test-Path $ptuPath) {
-        Write-Host "`n[SWAP] Renaming PTU to LIVE..." -ForegroundColor Yellow
+        Write-Host "`n[SWAP] Renaming PTU to LIVE to save download time..." -ForegroundColor Yellow
         if (Test-Path $livePath) {
             $ts = Get-Date -Format "yyyyMMdd_HHmm"
             Rename-Item -Path $livePath -NewName "LIVE_Backup_$ts"
+            Write-Host "Backup of old LIVE created."
         }
         Rename-Item -Path $ptuPath -NewName "LIVE"
-    } else { Write-Warning "PTU folder not found." }
+        Write-Host "PTU is now LIVE." -ForegroundColor Green
+    } else { Write-Warning "PTU folder not found. Cannot swap." }
 }
 
-# 3. LAUNCHER UPDATE
-if ($doUpdate) {
-    Write-Host "`n[UPDATE] Opening RSI Launcher..." -ForegroundColor Cyan
-    Start-Process "C:\Program Files\Roberts Space Industries\RSI Launcher\RSI Launcher.exe"
-    Read-Host "Press Enter once the game update is 100% complete..."
-}
-
-# 4. SHADER CLEANUP
+# 3. SHADER CLEANUP (Executed BEFORE Launcher)
 if ($doShaders) {
     $sFolder = "$env:LOCALAPPDATA\Star Citizen"
     if (Test-Path $sFolder) {
         Write-Host "`n[SHADERS] Clearing Shader Cache..." -ForegroundColor Yellow
         Remove-Item -Path "$sFolder\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Shader cache cleared." -ForegroundColor Green
     }
+}
+
+# 4. LAUNCHER UPDATE
+if ($doUpdate) {
+    Write-Host "`n[UPDATE] Opening RSI Launcher. Verify/Update LIVE, then return here." -ForegroundColor Cyan
+    Start-Process "C:\Program Files\Roberts Space Industries\RSI Launcher\RSI Launcher.exe"
+    Read-Host "Press Enter once the game update is 100% complete..."
 }
 
 # 5. LANGUAGE PACK & SMART USER.CFG APPEND
@@ -83,7 +86,7 @@ if ($doLang) {
 
 # 6. BINDINGS (TARGETED DOWNLOAD & EXTRACTION)
 if ($doBindings) {
-    Write-Host "`n[BINDINGS] Downloading targeted folder..." -ForegroundColor Cyan
+    Write-Host "`n[BINDINGS] Downloading targeted VKB folder..." -ForegroundColor Cyan
     $bZip = "$env:TEMP\Bindings.zip"
     Invoke-WebRequest -Uri $dropboxUrl -OutFile $bZip
 
@@ -108,8 +111,8 @@ if ($doBindings) {
     }
     $zip.Dispose()
     Remove-Item $bZip -Force
-    Write-Host "VKB and JoyToKey files updated." -ForegroundColor Green
+    Write-Host "VKB and JoyToKey files updated ($foundFiles files)." -ForegroundColor Green
 }
 
-Write-Host "`n--- Setup Complete! ---" -ForegroundColor Magenta
+Write-Host "`n--- Setup Complete! Fly safe, Citizen. ---" -ForegroundColor Magenta
 Read-Host "Press Enter to exit..."
