@@ -1,21 +1,30 @@
 # --- CONFIGURATION ---
-$rsiRoot = "C:\Program Files\Roberts Space Industries\StarCitizen"
+$rsiRoot = "D:\Star Citizen PTU\StarCitizen\"
 $livePath = "$rsiRoot\LIVE"
 $ptuPath = "$rsiRoot\PTU"
-$j2kPath = "C:\Users\Owner\Documents\JoyToKey"
+$j2kPath = "C:\Users\andyp\OneDrive\Documents\JoyToKey"
 $githubRepo = "ExoAE/ScCompLangPack"
-$dropboxUrl = "https://www.dropbox.com/scl/fo/hd5fllfi6ftn57dkfp4f3/AOMWBjv79FhHD8xDFAMdBAI?rlkey=wwm1w6p39sytpffv2nr70b31j&dl=1"
 
 # 1. PRE-FLIGHT QUESTIONS
 Clear-Host
 Write-Host "--- Star Citizen Update Automation ---`n" -ForegroundColor Magenta
 
-$vNum       = Read-Host "Enter the target version number (e.g., 4.5)"
+$vNum       = Read-Host "Enter the version number (e.g., 4.5)"
+$dbInput    = Read-Host "Paste the Dropbox URL for the $vNum folder (or press Enter for default)"
+
+# Ensure the URL uses dl=1 for direct download
+if ($dbInput) {
+    $dropboxUrl = $dbInput -replace 'dl=0', 'dl=1'
+} else {
+    # Default fallback URL (currently 4.4 folder)
+    $dropboxUrl = "https://www.dropbox.com/scl/fo/hd5fllfi6ftn57dkfp4f3/AExJR6pW0EA8WUxZqc-ACK8/SC%20Alpha%204.4?dl=1&rlkey=wwm1w6p39sytpffv2nr70b31j"
+}
+
 $doUpdate   = (Read-Host "Launch RSI Launcher to update LIVE? (y/n)") -eq 'y'
-$doSwap     = (Read-Host "Rename PTU folder to LIVE to save download time? (y/n)") -eq 'y'
+$doSwap     = (Read-Host "Rename PTU folder to LIVE? (y/n)") -eq 'y'
 $doShaders  = (Read-Host "Clear Shader Cache? (y/n)") -eq 'y'
 $doLang     = (Read-Host "Install Component Language Pack? (y/n)") -eq 'y'
-$doBindings = (Read-Host "Install VKB Bindings & JoyToKey profiles? (y/n)") -eq 'y'
+$doBindings = (Read-Host "Install VKB Bindings? (y/n)") -eq 'y'
 
 # 2. FOLDER SWAP
 if ($doSwap) {
@@ -24,15 +33,14 @@ if ($doSwap) {
         if (Test-Path $livePath) {
             $ts = Get-Date -Format "yyyyMMdd_HHmm"
             Rename-Item -Path $livePath -NewName "LIVE_Backup_$ts"
-            Write-Host "Backup of old LIVE created."
         }
         Rename-Item -Path $ptuPath -NewName "LIVE"
-    } else { Write-Warning "PTU folder not found, skipping swap." }
+    } else { Write-Warning "PTU folder not found." }
 }
 
 # 3. LAUNCHER UPDATE
 if ($doUpdate) {
-    Write-Host "`n[UPDATE] Opening RSI Launcher. Update LIVE, then return here." -ForegroundColor Cyan
+    Write-Host "`n[UPDATE] Opening RSI Launcher..." -ForegroundColor Cyan
     Start-Process "C:\Program Files\Roberts Space Industries\RSI Launcher\RSI Launcher.exe"
     Read-Host "Press Enter once the game update is 100% complete..."
 }
@@ -46,9 +54,9 @@ if ($doShaders) {
     }
 }
 
-# 5. LANGUAGE PACK
+# 5. LANGUAGE PACK & SMART USER.CFG APPEND
 if ($doLang) {
-    Write-Host "`n[LANG] Fetching Language Pack from GitHub..." -ForegroundColor Cyan
+    Write-Host "`n[LANG] Downloading Language Pack..." -ForegroundColor Cyan
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$githubRepo/releases/latest"
     $zipUrl = ($release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1).browser_download_url
     $tempZip = "$env:TEMP\Lang.zip"
@@ -59,38 +67,49 @@ if ($doLang) {
     Expand-Archive -Path $tempZip -DestinationPath $tempEx -Force
     Copy-Item -Path "$tempEx\data" -Destination $livePath -Recurse -Force
     
-    $cfg = "$livePath\user.cfg"
-    $writeCfg = $true
-    if (Test-Path $cfg) {
-        if ((Read-Host "user.cfg exists. Overwrite with 'g_language = english'? (y/n)") -eq 'n') { $writeCfg = $false }
+    $cfgFile = "$livePath\user.cfg"
+    $langLine = "g_language = english"
+    if (Test-Path $cfgFile) {
+        $existing = Get-Content $cfgFile
+        if ($existing -notcontains $langLine) {
+            Add-Content -Path $cfgFile -Value "`n$langLine"
+            Write-Host "Appended language setting to user.cfg." -ForegroundColor Green
+        }
+    } else { 
+        $langLine | Out-File $cfgFile -Encoding ascii 
+        Write-Host "Created new user.cfg." -ForegroundColor Green
     }
-    if ($writeCfg) { "g_language = english" | Out-File $cfg -Encoding ascii }
 }
 
-# 6. BINDINGS & JOYTOKEY
+# 6. BINDINGS (TARGETED DOWNLOAD & EXTRACTION)
 if ($doBindings) {
-    Write-Host "`n[BINDINGS] Downloading VKB Bindings for version $vNum..." -ForegroundColor Cyan
+    Write-Host "`n[BINDINGS] Downloading targeted folder..." -ForegroundColor Cyan
     $bZip = "$env:TEMP\Bindings.zip"
-    $bEx  = "$env:TEMP\BindEx"
-    
     Invoke-WebRequest -Uri $dropboxUrl -OutFile $bZip
-    if (Test-Path $bEx) { Remove-Item $bEx -Recurse -Force }
-    Expand-Archive -Path $bZip -DestinationPath $bEx -Force
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($bZip)
     
-    $vFolder = Get-ChildItem -Path $bEx -Filter "*SC Alpha $vNum*" -Recurse -Directory | Select-Object -First 1
-    
-    if ($vFolder) {
-        # XMLs to Star Citizen
-        $scMap = "$livePath\USER\Client\0\Controls\Mappings"
-        if (-not (Test-Path $scMap)) { New-Item $scMap -ItemType Directory -Force }
-        Get-ChildItem $vFolder.FullName -Filter "*.xml" -Recurse | Copy-Item -Destination $scMap -Force
-        
-        # CFGs to JoyToKey
-        if (-not (Test-Path $j2kPath)) { New-Item $j2kPath -ItemType Directory -Force }
-        Get-ChildItem $vFolder.FullName -Filter "*.cfg" -Recurse | Copy-Item -Destination $j2kPath -Force
-        
-        Write-Host "Bindings and J2K profiles updated successfully." -ForegroundColor Green
-    } else { Write-Error "Could not find folder for version $vNum in Dropbox zip." }
+    $foundFiles = 0
+    foreach ($entry in $zip.Entries) {
+        # Selective extraction of the Dual VKB folder
+        if ($entry.FullName -like "*Dual VKB Gladiator NXT*") {
+            $targetPath = ""
+            if ($entry.Name -like "*.xml") { $targetPath = "$livePath\USER\Client\0\Controls\Mappings" }
+            elseif ($entry.Name -like "*.cfg") { $targetPath = $j2kPath }
+
+            if ($targetPath) {
+                if (-not (Test-Path $targetPath)) { New-Item $targetPath -ItemType Directory -Force | Out-Null }
+                $destination = Join-Path $targetPath $entry.Name
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destination, $true)
+                $foundFiles++
+            }
+        }
+    }
+    $zip.Dispose()
+    Remove-Item $bZip -Force
+    Write-Host "VKB and JoyToKey files updated." -ForegroundColor Green
 }
 
-Write-Host "`n--- All selected tasks complete! ---" -ForegroundColor Magenta
+Write-Host "`n--- Setup Complete! ---" -ForegroundColor Magenta
+Read-Host "Press Enter to exit..."
