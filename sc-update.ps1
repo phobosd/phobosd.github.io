@@ -9,15 +9,14 @@ $githubRepo = "ExoAE/ScCompLangPack"
 Clear-Host
 Write-Host "--- Star Citizen Update Automation ---`n" -ForegroundColor Magenta
 
-$vNum       = Read-Host "Enter the version number (e.g., 4.5)"
-$dbInput    = Read-Host "Paste the Dropbox URL for the $vNum folder (or press Enter for default)"
+$dbInput = Read-Host "Paste the Dropbox URL for the Alpha folder ROOT"
 
 # Ensure the URL uses dl=1 for direct download
 if ($dbInput) {
     $dropboxUrl = $dbInput -replace 'dl=0', 'dl=1'
 } else {
-    # Default fallback URL (4.4 folder)
-    $dropboxUrl = "https://www.dropbox.com/scl/fo/hd5fllfi6ftn57dkfp4f3/AExJR6pW0EA8WUxZqc-ACK8/SC%20Alpha%204.4?dl=1&rlkey=wwm1w6p39sytpffv2nr70b31j"
+    Write-Error "Dropbox URL is required to proceed."
+    return
 }
 
 $doSwap     = (Read-Host "Rename PTU folder to LIVE? (y/n)") -eq 'y'
@@ -26,21 +25,21 @@ $doUpdate   = (Read-Host "Launch RSI Launcher to update LIVE? (y/n)") -eq 'y'
 $doLang     = (Read-Host "Install Component Language Pack? (y/n)") -eq 'y'
 $doBindings = (Read-Host "Install VKB Bindings? (y/n)") -eq 'y'
 
-# 2. FOLDER SWAP (Executed BEFORE Launcher)
+# 2. FOLDER SWAP (Before Update)
 if ($doSwap) {
     if (Test-Path $ptuPath) {
-        Write-Host "`n[SWAP] Renaming PTU to LIVE to save download time..." -ForegroundColor Yellow
+        Write-Host "`n[SWAP] Renaming PTU to LIVE..." -ForegroundColor Yellow
         if (Test-Path $livePath) {
             $ts = Get-Date -Format "yyyyMMdd_HHmm"
             Rename-Item -Path $livePath -NewName "LIVE_Backup_$ts"
-            Write-Host "Backup of old LIVE created."
+            Write-Host "Old LIVE backed up to LIVE_Backup_$ts"
         }
         Rename-Item -Path $ptuPath -NewName "LIVE"
-        Write-Host "PTU is now LIVE." -ForegroundColor Green
-    } else { Write-Warning "PTU folder not found. Cannot swap." }
+        Write-Host "PTU folder successfully renamed to LIVE." -ForegroundColor Green
+    } else { Write-Warning "PTU folder not found; skipping rename." }
 }
 
-# 3. SHADER CLEANUP (Executed BEFORE Launcher)
+# 3. SHADER CLEANUP
 if ($doShaders) {
     $sFolder = "$env:LOCALAPPDATA\Star Citizen"
     if (Test-Path $sFolder) {
@@ -52,12 +51,12 @@ if ($doShaders) {
 
 # 4. LAUNCHER UPDATE
 if ($doUpdate) {
-    Write-Host "`n[UPDATE] Opening RSI Launcher. Verify/Update LIVE, then return here." -ForegroundColor Cyan
+    Write-Host "`n[UPDATE] Opening RSI Launcher. Update/Verify LIVE, then return here." -ForegroundColor Cyan
     Start-Process "C:\Program Files\Roberts Space Industries\RSI Launcher\RSI Launcher.exe"
     Read-Host "Press Enter once the game update is 100% complete..."
 }
 
-# 5. LANGUAGE PACK & SMART USER.CFG APPEND
+# 5. LANGUAGE PACK & SMART USER.CFG
 if ($doLang) {
     Write-Host "`n[LANG] Downloading Language Pack..." -ForegroundColor Cyan
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$githubRepo/releases/latest"
@@ -76,17 +75,17 @@ if ($doLang) {
         $existing = Get-Content $cfgFile
         if ($existing -notcontains $langLine) {
             Add-Content -Path $cfgFile -Value "`n$langLine"
-            Write-Host "Appended language setting to user.cfg." -ForegroundColor Green
+            Write-Host "Appended language to user.cfg." -ForegroundColor Green
         }
     } else { 
         $langLine | Out-File $cfgFile -Encoding ascii 
-        Write-Host "Created new user.cfg." -ForegroundColor Green
+        Write-Host "Created new user.cfg with language setting." -ForegroundColor Green
     }
 }
 
-# 6. BINDINGS (TARGETED DOWNLOAD & EXTRACTION)
+# 6. BINDINGS EXTRACTION (Targeting Dual VKB Folder)
 if ($doBindings) {
-    Write-Host "`n[BINDINGS] Downloading targeted VKB folder..." -ForegroundColor Cyan
+    Write-Host "`n[BINDINGS] Downloading ZIP from Dropbox Alpha Root..." -ForegroundColor Cyan
     $bZip = "$env:TEMP\Bindings.zip"
     Invoke-WebRequest -Uri $dropboxUrl -OutFile $bZip
 
@@ -95,13 +94,18 @@ if ($doBindings) {
     
     $foundFiles = 0
     foreach ($entry in $zip.Entries) {
-        # Selective extraction of the Dual VKB folder
+        # Looks for files inside the 'Dual VKB Gladiator NXT' folder structure
         if ($entry.FullName -like "*Dual VKB Gladiator NXT*") {
-            $targetPath = ""
-            if ($entry.Name -like "*.xml") { $targetPath = "$livePath\USER\Client\0\Controls\Mappings" }
-            elseif ($entry.Name -like "*.cfg") { $targetPath = $j2kPath }
+            $targetPath = $null
+            
+            if ($entry.Name -like "*.xml") { 
+                $targetPath = "$livePath\USER\Client\0\Controls\Mappings" 
+            }
+            elseif ($entry.Name -like "*.cfg") { 
+                $targetPath = $j2kPath 
+            }
 
-            if ($targetPath) {
+            if ($targetPath -and -not [string]::IsNullOrEmpty($entry.Name)) {
                 if (-not (Test-Path $targetPath)) { New-Item $targetPath -ItemType Directory -Force | Out-Null }
                 $destination = Join-Path $targetPath $entry.Name
                 [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destination, $true)
@@ -111,7 +115,12 @@ if ($doBindings) {
     }
     $zip.Dispose()
     Remove-Item $bZip -Force
-    Write-Host "VKB and JoyToKey files updated ($foundFiles files)." -ForegroundColor Green
+    
+    if ($foundFiles -gt 0) {
+        Write-Host "Success! Extracted $foundFiles VKB/JoyToKey files." -ForegroundColor Green
+    } else {
+        Write-Warning "Could not find 'Dual VKB Gladiator NXT' files in the provided Alpha Root link."
+    }
 }
 
 Write-Host "`n--- Setup Complete! Fly safe, Citizen. ---" -ForegroundColor Magenta
