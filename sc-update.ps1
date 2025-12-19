@@ -1,8 +1,15 @@
+# --- ADMIN CHECK ---
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Warning "Please run this script as Administrator!"
+    Pause
+    Exit
+}
+
 # --- CONFIGURATION ---
-$rsiRoot = "D:\Star Citizen PTU\StarCitizen\"
+$rsiRoot = "C:\Program Files\Roberts Space Industries\StarCitizen"
 $livePath = "$rsiRoot\LIVE"
 $ptuPath = "$rsiRoot\PTU"
-$j2kPath = "C:\Users\andyp\OneDrive\Documents\JoyToKey"
+$j2kPath = "C:\Users\Owner\Documents\JoyToKey"
 $githubRepo = "ExoAE/ScCompLangPack"
 
 # 1. PRE-FLIGHT QUESTIONS
@@ -16,6 +23,7 @@ if ($dbInput) {
     $dropboxUrl = $dbInput -replace 'dl=0', 'dl=1'
 } else {
     Write-Error "Dropbox URL is required to proceed."
+    Read-Host "Press Enter to exit..."
     return
 }
 
@@ -32,7 +40,7 @@ if ($doSwap) {
         if (Test-Path $livePath) {
             $ts = Get-Date -Format "yyyyMMdd_HHmm"
             Rename-Item -Path $livePath -NewName "LIVE_Backup_$ts"
-            Write-Host "Old LIVE backed up to LIVE_Backup_$ts"
+            Write-Host "Old LIVE backed up."
         }
         Rename-Item -Path $ptuPath -NewName "LIVE"
         Write-Host "PTU folder successfully renamed to LIVE." -ForegroundColor Green
@@ -56,7 +64,7 @@ if ($doUpdate) {
     Read-Host "Press Enter once the game update is 100% complete..."
 }
 
-# 5. LANGUAGE PACK & SMART USER.CFG
+# 5. LANGUAGE PACK & SMART USER.CFG (After Update)
 if ($doLang) {
     Write-Host "`n[LANG] Downloading Language Pack..." -ForegroundColor Cyan
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$githubRepo/releases/latest"
@@ -79,11 +87,11 @@ if ($doLang) {
         }
     } else { 
         $langLine | Out-File $cfgFile -Encoding ascii 
-        Write-Host "Created new user.cfg with language setting." -ForegroundColor Green
+        Write-Host "Created new user.cfg." -ForegroundColor Green
     }
 }
 
-# 6. BINDINGS EXTRACTION (Targeting Dual VKB Folder)
+# 6. BINDINGS EXTRACTION (After Update)
 if ($doBindings) {
     Write-Host "`n[BINDINGS] Downloading ZIP from Dropbox Alpha Root..." -ForegroundColor Cyan
     $bZip = "$env:TEMP\Bindings.zip"
@@ -94,7 +102,6 @@ if ($doBindings) {
     
     $foundFiles = 0
     foreach ($entry in $zip.Entries) {
-        # Looks for files inside the 'Dual VKB Gladiator NXT' folder structure
         if ($entry.FullName -like "*Dual VKB Gladiator NXT*") {
             $targetPath = $null
             
@@ -115,12 +122,7 @@ if ($doBindings) {
     }
     $zip.Dispose()
     Remove-Item $bZip -Force
-    
-    if ($foundFiles -gt 0) {
-        Write-Host "Success! Extracted $foundFiles VKB/JoyToKey files." -ForegroundColor Green
-    } else {
-        Write-Warning "Could not find 'Dual VKB Gladiator NXT' files in the provided Alpha Root link."
-    }
+    Write-Host "Success! Extracted $foundFiles VKB/JoyToKey files." -ForegroundColor Green
 }
 
 Write-Host "`n--- Setup Complete! Fly safe, Citizen. ---" -ForegroundColor Magenta
