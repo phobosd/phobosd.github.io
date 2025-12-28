@@ -1,129 +1,161 @@
 # --- ADMIN CHECK ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Warning "Please run this script as Administrator!"
-    Pause
-    Exit
+    Pause; Exit
 }
 
-# --- CONFIGURATION ---
-$rsiRoot = "C:\Program Files\Roberts Space Industries\StarCitizen"
-$livePath = "$rsiRoot\LIVE"
-$ptuPath = "$rsiRoot\PTU"
-$j2kPath = "C:\Users\Owner\Documents\JoyToKey"
-$githubRepo = "ExoAE/ScCompLangPack"
-
-# 1. PRE-FLIGHT QUESTIONS
-Clear-Host
-Write-Host "--- Star Citizen Update Automation ---`n" -ForegroundColor Magenta
-
-$dbInput = Read-Host "Paste the Dropbox URL for the Alpha folder ROOT"
-
-# Ensure the URL uses dl=1 for direct download
-if ($dbInput) {
-    $dropboxUrl = $dbInput -replace 'dl=0', 'dl=1'
+# --- PERSISTENCE LOGIC ---
+$configFile = Join-Path $PSScriptRoot "sc_update_config.json"
+if (Test-Path $configFile) {
+    $vars = ConvertFrom-Json (Get-Content $configFile)
 } else {
-    Write-Error "Dropbox URL is required to proceed."
-    Read-Host "Press Enter to exit..."
-    return
-}
-
-$doSwap     = (Read-Host "Rename PTU folder to LIVE? (y/n)") -eq 'y'
-$doShaders  = (Read-Host "Clear Shader Cache? (y/n)") -eq 'y'
-$doUpdate   = (Read-Host "Launch RSI Launcher to update LIVE? (y/n)") -eq 'y'
-$doLang     = (Read-Host "Install Component Language Pack? (y/n)") -eq 'y'
-$doBindings = (Read-Host "Install VKB Bindings? (y/n)") -eq 'y'
-
-# 2. FOLDER SWAP (Before Update)
-if ($doSwap) {
-    if (Test-Path $ptuPath) {
-        Write-Host "`n[SWAP] Renaming PTU to LIVE..." -ForegroundColor Yellow
-        if (Test-Path $livePath) {
-            $ts = Get-Date -Format "yyyyMMdd_HHmm"
-            Rename-Item -Path $livePath -NewName "LIVE_Backup_$ts"
-            Write-Host "Old LIVE backed up."
-        }
-        Rename-Item -Path $ptuPath -NewName "LIVE"
-        Write-Host "PTU folder successfully renamed to LIVE." -ForegroundColor Green
-    } else { Write-Warning "PTU folder not found; skipping rename." }
-}
-
-# 3. SHADER CLEANUP
-if ($doShaders) {
-    $sFolder = "$env:LOCALAPPDATA\Star Citizen"
-    if (Test-Path $sFolder) {
-        Write-Host "`n[SHADERS] Clearing Shader Cache..." -ForegroundColor Yellow
-        Remove-Item -Path "$sFolder\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Shader cache cleared." -ForegroundColor Green
+    $vars = [PSCustomObject]@{
+        rsiRoot = "C:\Program Files\Roberts Space Industries\StarCitizen"
+        j2kPath = "C:\Users\Owner\Documents\JoyToKey"
     }
 }
 
-# 4. LAUNCHER UPDATE
-if ($doUpdate) {
-    Write-Host "`n[UPDATE] Opening RSI Launcher. Update/Verify LIVE, then return here." -ForegroundColor Cyan
-    Start-Process "C:\Program Files\Roberts Space Industries\RSI Launcher\RSI Launcher.exe"
-    Read-Host "Press Enter once the game update is 100% complete..."
+function Save-Settings {
+    $vars | ConvertTo-Json | Out-File $configFile
 }
 
-# 5. LANGUAGE PACK & SMART USER.CFG (After Update)
-if ($doLang) {
-    Write-Host "`n[LANG] Downloading Language Pack..." -ForegroundColor Cyan
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$githubRepo/releases/latest"
-    $zipUrl = ($release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1).browser_download_url
-    $tempZip = "$env:TEMP\Lang.zip"
-    $tempEx  = "$env:TEMP\LangEx"
-    
-    Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip
-    if (Test-Path $tempEx) { Remove-Item $tempEx -Recurse -Force }
-    Expand-Archive -Path $tempZip -DestinationPath $tempEx -Force
-    Copy-Item -Path "$tempEx\data" -Destination $livePath -Recurse -Force
-    
-    $cfgFile = "$livePath\user.cfg"
-    $langLine = "g_language = english"
-    if (Test-Path $cfgFile) {
-        $existing = Get-Content $cfgFile
-        if ($existing -notcontains $langLine) {
-            Add-Content -Path $cfgFile -Value "`n$langLine"
-            Write-Host "Appended language to user.cfg." -ForegroundColor Green
-        }
-    } else { 
-        $langLine | Out-File $cfgFile -Encoding ascii 
-        Write-Host "Created new user.cfg." -ForegroundColor Green
-    }
-}
+# --- GLOBAL LOOP ---
+$scriptRunning = $true
+while ($scriptRunning) {
 
-# 6. BINDINGS EXTRACTION (After Update)
-if ($doBindings) {
-    Write-Host "`n[BINDINGS] Downloading ZIP from Dropbox Alpha Root..." -ForegroundColor Cyan
-    $bZip = "$env:TEMP\Bindings.zip"
-    Invoke-WebRequest -Uri $dropboxUrl -OutFile $bZip
+    # --- MENU DATA ---
+    # We rebuild this each loop to reset the "Selected" state if desired, 
+    # or keep it outside the loop if you want selections to persist.
+    $menuItems = @(
+        @{ Type = "Task";   Name = "Rename PTU folder to LIVE"; Selected = $false }
+        @{ Type = "Task";   Name = "Clear Shader Cache"; Selected = $false }
+        @{ Type = "Task";   Name = "Update via RSI Launcher"; Selected = $false }
+        @{ Type = "Task";   Name = "Install Component Language Pack"; Selected = $false }
+        @{ Type = "Task";   Name = "Install VKB Bindings & J2K Profiles"; Selected = $false }
+        @{ Type = "Sep";    Name = "--- SETTINGS (Enter to Change) ---" }
+        @{ Type = "Var";    Name = "SC Root"; Key = "rsiRoot" }
+        @{ Type = "Var";    Name = "J2K Path"; Key = "j2kPath" }
+        @{ Type = "Action"; Name = "START EXECUTION"; ID = "RUN" }
+        @{ Type = "Action"; Name = "EXIT SCRIPT"; ID = "EXIT" }
+    )
 
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($bZip)
-    
-    $foundFiles = 0
-    foreach ($entry in $zip.Entries) {
-        if ($entry.FullName -like "*Dual VKB Gladiator NXT*") {
-            $targetPath = $null
+    $currentLine = 0
+    $readyToExecute = $false
+
+    # --- INPUT LOOP ---
+    while (-not $readyToExecute) {
+        Clear-Host
+        Write-Host "--- STAR CITIZEN UPDATE MANAGER ---" -ForegroundColor Magenta
+        Write-Host "Arrows: Nav | Space: Toggle | [A] All | [C] Clear | Enter: Edit/Start`n" -ForegroundColor Gray
+
+        for ($i = 0; $i -lt $menuItems.Count; $i++) {
+            $item = $menuItems[$i]
+            $pointer = if ($i -eq $currentLine) { "> " } else { "  " }
             
-            if ($entry.Name -like "*.xml") { 
-                $targetPath = "$livePath\USER\Client\0\Controls\Mappings" 
+            if ($item.Type -eq "Task") {
+                $check = if ($item.Selected) { "[X]" } else { "[ ]" }
+                $text = "$pointer $check $($item.Name)"
             }
-            elseif ($entry.Name -like "*.cfg") { 
-                $targetPath = $j2kPath 
+            elseif ($item.Type -eq "Var") {
+                $text = "$pointer $($item.Name): $($vars.$($item.Key))"
+            }
+            elseif ($item.Type -eq "Sep") {
+                $text = "   $($item.Name)"
+            }
+            else {
+                $text = "$pointer [[ $($item.Name) ]]"
             }
 
-            if ($targetPath -and -not [string]::IsNullOrEmpty($entry.Name)) {
-                if (-not (Test-Path $targetPath)) { New-Item $targetPath -ItemType Directory -Force | Out-Null }
-                $destination = Join-Path $targetPath $entry.Name
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destination, $true)
-                $foundFiles++
+            $color = "White"
+            if ($i -eq $currentLine) { $color = "Cyan" } 
+            elseif ($item.Type -eq "Sep") { $color = "DarkGray" }
+
+            Write-Host $text -ForegroundColor $color
+        }
+
+        $key = [Console]::ReadKey($true)
+        switch ($key.Key) {
+            "UpArrow"   { do { $currentLine = if ($currentLine -gt 0) { $currentLine - 1 } else { $menuItems.Count - 1 } } while ($menuItems[$currentLine].Type -eq "Sep") }
+            "DownArrow" { do { $currentLine = if ($currentLine -lt $menuItems.Count - 1) { $currentLine + 1 } else { 0 } } while ($menuItems[$currentLine].Type -eq "Sep") }
+            "Spacebar"  { if ($menuItems[$currentLine].Type -eq "Task") { $menuItems[$currentLine].Selected = -not $menuItems[$currentLine].Selected } }
+            "A"         { foreach ($m in $menuItems) { if ($m.Type -eq "Task") { $m.Selected = $true } } }
+            "C"         { foreach ($m in $menuItems) { if ($m.Type -eq "Task") { $m.Selected = $false } } }
+            "Enter"     { 
+                if ($menuItems[$currentLine].Type -eq "Var") {
+                    $newPath = Read-Host "`nEnter new path for $($menuItems[$currentLine].Name)"
+                    if (Test-Path $newPath) { $vars.$($menuItems[$currentLine].Key) = $newPath; Save-Settings } 
+                    else { Write-Host "Invalid Path!" -ForegroundColor Red; Start-Sleep -s 1 }
+                }
+                elseif ($menuItems[$currentLine].ID -eq "EXIT") { $scriptRunning = $false; $readyToExecute = $true }
+                elseif ($menuItems[$currentLine].ID -eq "RUN") { $readyToExecute = $true }
+                elseif ($menuItems[$currentLine].Type -eq "Task") { $menuItems[$currentLine].Selected = -not $menuItems[$currentLine].Selected }
             }
         }
     }
-    $zip.Dispose()
-    Remove-Item $bZip -Force
-    Write-Host "Success! Extracted $foundFiles VKB/JoyToKey files." -ForegroundColor Green
-}
 
-Write-Host "`n--- Setup Complete! Fly safe, Citizen. ---" -ForegroundColor Magenta
-Read-Host "Press Enter to exit..."
+    if (-not $scriptRunning) { break }
+
+    # --- EXECUTION ---
+    Clear-Host
+    $livePath = "$($vars.rsiRoot)\LIVE"
+    $ptuPath  = "$($vars.rsiRoot)\PTU"
+    
+    if ($menuItems[4].Selected) {
+        $dbInput = Read-Host "Paste the Dropbox URL for the Alpha folder ROOT"
+        $dropboxUrl = $dbInput -replace 'dl=0', 'dl=1'
+    }
+
+    if ($menuItems[0].Selected) {
+        Write-Host "`n[1/5] Swapping PTU..." -ForegroundColor Yellow
+        if (Test-Path $ptuPath) {
+            if (Test-Path $livePath) { Rename-Item $livePath -NewName "LIVE_Backup_$(Get-Date -f yyyyMMdd_HHmm)" }
+            Rename-Item $ptuPath -NewName "LIVE"
+        }
+    }
+
+    if ($menuItems[1].Selected) {
+        Write-Host "[2/5] Clearing Shaders..." -ForegroundColor Yellow
+        $sFolder = "$env:LOCALAPPDATA\Star Citizen"
+        if (Test-Path $sFolder) { Remove-Item "$sFolder\*" -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    if ($menuItems[2].Selected) {
+        Write-Host "[3/5] Launching Update..." -ForegroundColor Cyan
+        $launcher = "$($vars.rsiRoot)\..\RSI Launcher\RSI Launcher.exe"
+        if (Test-Path $launcher) { Start-Process $launcher }
+        Read-Host "Press Enter once update is complete..."
+    }
+
+    if ($menuItems[3].Selected) {
+        Write-Host "[4/5] Installing Lang Pack..." -ForegroundColor Cyan
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ExoAE/ScCompLangPack/releases/latest"
+        $zipUrl = ($release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1).browser_download_url
+        $tempZip = "$env:TEMP\Lang.zip"; Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip
+        Expand-Archive $tempZip -DestinationPath "$env:TEMP\LangEx" -Force
+        Copy-Item "$env:TEMP\LangEx\data" -Destination $livePath -Recurse -Force
+        $cfg = "$livePath\user.cfg"
+        if (Test-Path $cfg) { if ((Get-Content $cfg) -notcontains "g_language = english") { Add-Content $cfg -Value "`ng_language = english" } }
+        else { "g_language = english" | Out-File $cfg -Encoding ascii }
+    }
+
+    if ($menuItems[4].Selected) {
+        Write-Host "[5/5] Installing Bindings..." -ForegroundColor Cyan
+        $bZip = "$env:TEMP\Bindings.zip"; Invoke-WebRequest -Uri $dropboxUrl -OutFile $bZip
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($bZip)
+        foreach ($entry in $zip.Entries) {
+            if ($entry.FullName -like "*Dual VKB Gladiator NXT*") {
+                $dest = if ($entry.Name -like "*.xml") { "$livePath\USER\Client\0\Controls\Mappings" }
+                        elseif ($entry.Name -like "*.cfg") { $vars.j2kPath }
+                if ($dest -and $entry.Name) {
+                    if (-not (Test-Path $dest)) { New-Item $dest -ItemType Directory -Force | Out-Null }
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $dest $entry.Name), $true)
+                }
+            }
+        }
+        $zip.Dispose(); Remove-Item $bZip -Force
+    }
+
+    Write-Host "`nTasks complete! Press any key to return to the menu..." -ForegroundColor Magenta
+    [Console]::ReadKey($true) | Out-Null
+}
