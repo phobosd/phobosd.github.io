@@ -26,7 +26,7 @@ function Save-Settings {
 
 $scriptRunning = $true
 while ($scriptRunning) {
-    # Path Sanitization: Strips trailing LIVE/PTU so we don't get D:\...\LIVE\LIVE
+    # Path Sanitization: Strips trailing LIVE/PTU
     $cleanRoot = $vars.rsiRoot.TrimEnd('\').TrimEnd('/')
     if ($cleanRoot -like "*\LIVE") { $cleanRoot = $cleanRoot.Substring(0, $cleanRoot.Length - 5) }
     if ($cleanRoot -like "*\PTU")  { $cleanRoot = $cleanRoot.Substring(0, $cleanRoot.Length - 4) }
@@ -51,6 +51,7 @@ while ($scriptRunning) {
         @{ Type = "Sep";    Name = "--- UTILITIES ---" }
         @{ Type = "Action"; Name = "Open LIVE Folder"; ID = "OPEN_SC" }
         @{ Type = "Action"; Name = "Open PTU Folder ($ptuValid)"; ID = "OPEN_PTU" }
+        @{ Type = "Action"; Name = "Open JoyToKey Folder"; ID = "OPEN_J2K" }
         @{ Type = "Action"; Name = "START EXECUTION"; ID = "RUN" }
         @{ Type = "Action"; Name = "EXIT SCRIPT"; ID = "EXIT" }
     )
@@ -97,6 +98,7 @@ while ($scriptRunning) {
                 }
                 elseif ($menuItems[$currentLine].ID -eq "OPEN_SC") { if(Test-Path -LiteralPath $livePath){ Start-Process $livePath } }
                 elseif ($menuItems[$currentLine].ID -eq "OPEN_PTU") { if(Test-Path -LiteralPath $ptuPath){ Start-Process $ptuPath } }
+                elseif ($menuItems[$currentLine].ID -eq "OPEN_J2K") { if(Test-Path -LiteralPath $vars.j2kPath){ Start-Process $vars.j2kPath } }
                 elseif ($menuItems[$currentLine].ID -eq "EXIT") { $scriptRunning = $false; $readyToExecute = $true }
                 elseif ($menuItems[$currentLine].ID -eq "RUN") { 
                     if (-not (Test-Path -LiteralPath $livePath)) {
