@@ -55,7 +55,7 @@
         <!-- Stopwatch 1 -->
         <div id="sw-1" class="stopwatch-card rounded-lg">
             <div class="text-[10px] uppercase tracking-widest text-gray-500">Timer One</div>
-            <div id="display-1" class="timer-display text-5xl font-bold">00:00:00.0</div>
+            <div id="display-1" class="timer-display text-5xl font-bold">00:00:00</div>
             <div class="flex gap-2 w-full h-[45%]">
                 <button onclick="toggleTimer(1)" id="btn-start-1" class="btn-red flex-1 text-xl font-bold rounded-xl">START</button>
                 <button onclick="resetTimer(1)" class="btn-gray flex-1 text-xl font-bold rounded-xl">RESET</button>
@@ -65,7 +65,7 @@
         <!-- Stopwatch 2 -->
         <div id="sw-2" class="stopwatch-card rounded-lg">
             <div class="text-[10px] uppercase tracking-widest text-gray-500">Timer Two</div>
-            <div id="display-2" class="timer-display text-5xl font-bold">00:00:00.0</div>
+            <div id="display-2" class="timer-display text-5xl font-bold">00:00:00</div>
             <div class="flex gap-2 w-full h-[45%]">
                 <button onclick="toggleTimer(2)" id="btn-start-2" class="btn-red flex-1 text-xl font-bold rounded-xl">START</button>
                 <button onclick="resetTimer(2)" class="btn-gray flex-1 text-xl font-bold rounded-xl">RESET</button>
@@ -75,7 +75,7 @@
         <!-- Stopwatch 3 -->
         <div id="sw-3" class="stopwatch-card rounded-lg">
             <div class="text-[10px] uppercase tracking-widest text-gray-500">Timer Three</div>
-            <div id="display-3" class="timer-display text-5xl font-bold">00:00:00.0</div>
+            <div id="display-3" class="timer-display text-5xl font-bold">00:00:00</div>
             <div class="flex gap-2 w-full h-[45%]">
                 <button onclick="toggleTimer(3)" id="btn-start-3" class="btn-red flex-1 text-xl font-bold rounded-xl">START</button>
                 <button onclick="resetTimer(3)" class="btn-gray flex-1 text-xl font-bold rounded-xl">RESET</button>
@@ -85,7 +85,7 @@
         <!-- Stopwatch 4 -->
         <div id="sw-4" class="stopwatch-card rounded-lg">
             <div class="text-[10px] uppercase tracking-widest text-gray-500">Timer Four</div>
-            <div id="display-4" class="timer-display text-5xl font-bold">00:00:00.0</div>
+            <div id="display-4" class="timer-display text-5xl font-bold">00:00:00</div>
             <div class="flex gap-2 w-full h-[45%]">
                 <button onclick="toggleTimer(4)" id="btn-start-4" class="btn-red flex-1 text-xl font-bold rounded-xl">START</button>
                 <button onclick="resetTimer(4)" class="btn-gray flex-1 text-xl font-bold rounded-xl">RESET</button>
@@ -107,9 +107,8 @@
             let hours = Math.floor(totalSeconds / 3600);
             let minutes = Math.floor((totalSeconds % 3600) / 60);
             let seconds = totalSeconds % 60;
-            let deciseconds = Math.floor((ms % 1000) / 100);
 
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${deciseconds}`;
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         }
 
         function updateDisplay(id) {
@@ -126,7 +125,7 @@
                 t.timerInterval = setInterval(() => {
                     t.elapsedTime = Date.now() - t.startTime;
                     updateDisplay(id);
-                }, 100);
+                }, 200); // Updated to 200ms to keep CPU usage low on Pi while staying responsive
                 t.running = true;
                 btn.textContent = "STOP";
                 btn.style.backgroundColor = "#ffffff";
