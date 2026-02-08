@@ -190,12 +190,14 @@
 
         function setCountdown(id, minutes) {
             const t = timers[id];
+            // Stop existing interval before resetting
             clearInterval(t.timerInterval);
             t.running = false;
             t.isCountdown = true;
             t.elapsedTime = minutes * 60 * 1000;
-            updateUIState(id, false);
             updateDisplay(id);
+            // Start immediately
+            toggleTimer(id);
         }
 
         function resetTimer(id) {
