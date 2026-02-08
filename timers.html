@@ -15,7 +15,7 @@
             width: 100vw;
             user-select: none;
             margin: 0;
-            padding: 4px; /* Small outer gutter */
+            padding: 4px; 
         }
         .stopwatch-card {
             border: 1px solid #222;
@@ -24,12 +24,11 @@
             flex-direction: column;
             justify-content: space-between;
             align-items: center;
-            padding: 8px;
+            padding: 6px;
         }
         .timer-display {
             font-family: monospace;
             font-variant-numeric: tabular-nums;
-            /* Precise sizing for 480px height (approx 230px per row) */
             line-height: 1;
         }
         .btn-red {
@@ -45,18 +44,34 @@
         .btn-gray:active {
             background-color: #404040;
         }
+        .btn-preset {
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            font-size: 0.75rem;
+            padding: 4px 0;
+            border-radius: 6px;
+        }
+        .btn-preset:active {
+            background-color: #333;
+        }
     </style>
 </head>
 <body class="flex items-stretch">
 
-    <!-- Quad Grid Layout optimized for 800x480 -->
     <div class="grid grid-cols-2 grid-rows-2 gap-2 w-full h-full">
         
         <!-- Stopwatch 1 -->
         <div id="sw-1" class="stopwatch-card rounded-lg">
             <div class="text-[10px] uppercase tracking-widest text-gray-500">Timer One</div>
             <div id="display-1" class="timer-display text-5xl font-bold">00:00:00</div>
-            <div class="flex gap-2 w-full h-[45%]">
+            
+            <!-- Countdown Presets -->
+            <div class="flex gap-2 w-full">
+                <button onclick="setCountdown(1, 15)" class="btn-preset flex-1">15m CD</button>
+                <button onclick="setCountdown(1, 20)" class="btn-preset flex-1">20m CD</button>
+            </div>
+
+            <div class="flex gap-2 w-full h-[38%]">
                 <button onclick="toggleTimer(1)" id="btn-start-1" class="btn-red flex-1 text-xl font-bold rounded-xl">START</button>
                 <button onclick="resetTimer(1)" class="btn-gray flex-1 text-xl font-bold rounded-xl">RESET</button>
             </div>
@@ -66,7 +81,13 @@
         <div id="sw-2" class="stopwatch-card rounded-lg">
             <div class="text-[10px] uppercase tracking-widest text-gray-500">Timer Two</div>
             <div id="display-2" class="timer-display text-5xl font-bold">00:00:00</div>
-            <div class="flex gap-2 w-full h-[45%]">
+            
+            <div class="flex gap-2 w-full">
+                <button onclick="setCountdown(2, 15)" class="btn-preset flex-1">15m CD</button>
+                <button onclick="setCountdown(2, 20)" class="btn-preset flex-1">20m CD</button>
+            </div>
+
+            <div class="flex gap-2 w-full h-[38%]">
                 <button onclick="toggleTimer(2)" id="btn-start-2" class="btn-red flex-1 text-xl font-bold rounded-xl">START</button>
                 <button onclick="resetTimer(2)" class="btn-gray flex-1 text-xl font-bold rounded-xl">RESET</button>
             </div>
@@ -76,7 +97,13 @@
         <div id="sw-3" class="stopwatch-card rounded-lg">
             <div class="text-[10px] uppercase tracking-widest text-gray-500">Timer Three</div>
             <div id="display-3" class="timer-display text-5xl font-bold">00:00:00</div>
-            <div class="flex gap-2 w-full h-[45%]">
+            
+            <div class="flex gap-2 w-full">
+                <button onclick="setCountdown(3, 15)" class="btn-preset flex-1">15m CD</button>
+                <button onclick="setCountdown(3, 20)" class="btn-preset flex-1">20m CD</button>
+            </div>
+
+            <div class="flex gap-2 w-full h-[38%]">
                 <button onclick="toggleTimer(3)" id="btn-start-3" class="btn-red flex-1 text-xl font-bold rounded-xl">START</button>
                 <button onclick="resetTimer(3)" class="btn-gray flex-1 text-xl font-bold rounded-xl">RESET</button>
             </div>
@@ -86,7 +113,13 @@
         <div id="sw-4" class="stopwatch-card rounded-lg">
             <div class="text-[10px] uppercase tracking-widest text-gray-500">Timer Four</div>
             <div id="display-4" class="timer-display text-5xl font-bold">00:00:00</div>
-            <div class="flex gap-2 w-full h-[45%]">
+            
+            <div class="flex gap-2 w-full">
+                <button onclick="setCountdown(4, 15)" class="btn-preset flex-1">15m CD</button>
+                <button onclick="setCountdown(4, 20)" class="btn-preset flex-1">20m CD</button>
+            </div>
+
+            <div class="flex gap-2 w-full h-[38%]">
                 <button onclick="toggleTimer(4)" id="btn-start-4" class="btn-red flex-1 text-xl font-bold rounded-xl">START</button>
                 <button onclick="resetTimer(4)" class="btn-gray flex-1 text-xl font-bold rounded-xl">RESET</button>
             </div>
@@ -96,14 +129,16 @@
 
     <script>
         const timers = {
-            1: { startTime: 0, elapsedTime: 0, timerInterval: null, running: false },
-            2: { startTime: 0, elapsedTime: 0, timerInterval: null, running: false },
-            3: { startTime: 0, elapsedTime: 0, timerInterval: null, running: false },
-            4: { startTime: 0, elapsedTime: 0, timerInterval: null, running: false }
+            1: { startTime: 0, elapsedTime: 0, timerInterval: null, running: false, isCountdown: false },
+            2: { startTime: 0, elapsedTime: 0, timerInterval: null, running: false, isCountdown: false },
+            3: { startTime: 0, elapsedTime: 0, timerInterval: null, running: false, isCountdown: false },
+            4: { startTime: 0, elapsedTime: 0, timerInterval: null, running: false, isCountdown: false }
         };
 
         function formatTime(ms) {
-            let totalSeconds = Math.floor(ms / 1000);
+            // Ensure we don't show negative time for countdowns
+            const absoluteMs = Math.max(0, ms);
+            let totalSeconds = Math.floor(absoluteMs / 1000);
             let hours = Math.floor(totalSeconds / 3600);
             let minutes = Math.floor((totalSeconds % 3600) / 60);
             let seconds = totalSeconds % 60;
@@ -121,34 +156,72 @@
             const btn = document.getElementById(`btn-start-${id}`);
 
             if (!t.running) {
-                t.startTime = Date.now() - t.elapsedTime;
+                if (t.isCountdown) {
+                    // Countdown mode: Target time is current time + remaining duration
+                    t.startTime = Date.now() + t.elapsedTime;
+                } else {
+                    // Stopwatch mode: Start time is current time - already elapsed duration
+                    t.startTime = Date.now() - t.elapsedTime;
+                }
+
                 t.timerInterval = setInterval(() => {
-                    t.elapsedTime = Date.now() - t.startTime;
+                    if (t.isCountdown) {
+                        t.elapsedTime = t.startTime - Date.now();
+                        if (t.elapsedTime <= 0) {
+                            t.elapsedTime = 0;
+                            clearInterval(t.timerInterval);
+                            t.running = false;
+                            updateUIState(id, false);
+                        }
+                    } else {
+                        t.elapsedTime = Date.now() - t.startTime;
+                    }
                     updateDisplay(id);
-                }, 200); // Updated to 200ms to keep CPU usage low on Pi while staying responsive
+                }, 200);
+                
                 t.running = true;
-                btn.textContent = "STOP";
-                btn.style.backgroundColor = "#ffffff";
-                btn.style.color = "#000000";
+                updateUIState(id, true);
             } else {
                 clearInterval(t.timerInterval);
                 t.running = false;
-                btn.textContent = "START";
-                btn.style.backgroundColor = ""; 
-                btn.style.color = "";
+                updateUIState(id, false);
             }
+        }
+
+        function setCountdown(id, minutes) {
+            const t = timers[id];
+            clearInterval(t.timerInterval);
+            t.running = false;
+            t.isCountdown = true;
+            t.elapsedTime = minutes * 60 * 1000;
+            updateUIState(id, false);
+            updateDisplay(id);
         }
 
         function resetTimer(id) {
             const t = timers[id];
-            const btn = document.getElementById(`btn-start-${id}`);
             clearInterval(t.timerInterval);
             t.running = false;
             t.elapsedTime = 0;
-            btn.textContent = "START";
-            btn.style.backgroundColor = "";
-            btn.style.color = "";
+            t.isCountdown = false;
+            updateUIState(id, false);
             updateDisplay(id);
+        }
+
+        function updateUIState(id, isRunning) {
+            const btn = document.getElementById(`btn-start-${id}`);
+            const card = document.getElementById(`sw-${id}`);
+            if (isRunning) {
+                btn.textContent = "STOP";
+                btn.style.backgroundColor = "#ffffff";
+                btn.style.color = "#000000";
+                card.style.borderColor = timers[id].isCountdown ? "#facc15" : "#b91c1c"; // Yellow for CD, Red for SW
+            } else {
+                btn.textContent = "START";
+                btn.style.backgroundColor = ""; 
+                btn.style.color = "";
+                card.style.borderColor = "#222";
+            }
         }
 
         window.addEventListener('load', () => {
